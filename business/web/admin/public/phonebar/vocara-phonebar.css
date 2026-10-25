@@ -1,0 +1,627 @@
+/* vocara-phonebar.css — 电话条 SDK 样式（白色悬浮小圆角条 + 自绘圆形图标按钮，
+   主色翠绿 #18a058，与 admin 主题一致） */
+
+/* ===== 浮动容器（container 缺省时的右下角悬浮条） ===== */
+.vocara-pb-float {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 99999;
+}
+
+/* ===== 部件根（状态卡相对主条定位；z-index 保证卡片浮出时盖在页面内容之上） ===== */
+.vocara-pb {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  z-index: 100;
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  color: #1f2937;
+  user-select: none;
+}
+
+/* ===== 主条（白色悬浮圆角条，圆角对齐系统卡片体系） ===== */
+.vocara-pb-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  white-space: nowrap;
+}
+
+/* 浮动模式下主条为拖拽手柄 */
+.vocara-pb-float .vocara-pb-bar {
+  cursor: move;
+}
+
+/* ===== 状态点 ===== */
+.vocara-pb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  background: #9ca3af;            /* 默认灰 */
+}
+
+.vocara-pb-dot--offline {
+  background: #9ca3af;            /* OFFLINE 灰 */
+}
+
+.vocara-pb-dot--checked {
+  background: #3b82f6;            /* CHECKED 蓝 */
+}
+
+.vocara-pb-dot--ready {
+  background: #18a058;            /* READY 绿 */
+}
+
+.vocara-pb-dot--busy {
+  background: #f59e0b;            /* BUSY 橙 */
+}
+
+.vocara-pb-dot--ringing {
+  background: #18a058;            /* RINGING 闪烁 */
+  animation: vocara-pb-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes vocara-pb-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* ===== 工号/分机文本 ===== */
+.vocara-pb-ext {
+  font-weight: 600;
+  color: #111827;
+  min-width: 32px;
+}
+
+/* ===== 竖向分隔线（会话区 / 工作区） ===== */
+.vocara-pb-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: #e5e7eb;
+  flex: none;
+}
+
+/* ===== 工作区 ===== */
+.vocara-pb-work {
+  display: flex;
+  align-items: center;
+}
+
+.vocara-pb-dialpanel,
+.vocara-pb-callpanel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ===== 圆形图标按钮通用 ===== */
+.vocara-pb-iconbtn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #4b5563;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.15s ease, border-color 0.15s ease,
+              color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.vocara-pb-iconbtn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vocara-pb-iconbtn:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.vocara-pb-iconbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 静音/功能钮激活态：橙色实心 */
+.vocara-pb-iconbtn--active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.vocara-pb-iconbtn--active:hover:not(:disabled) {
+  background: #f9ad2a;
+  border-color: #f9ad2a;
+}
+
+/* 签出钮：透明弱描边 */
+.vocara-pb-btn-signout {
+  border-color: #e5e7eb;
+  color: #6b7280;
+}
+
+.vocara-pb-btn-signout:hover:not(:disabled) {
+  border-color: #d1d5db;
+}
+
+/* 签入/呼叫/接听：翠绿实心 */
+.vocara-pb-btn-signin,
+.vocara-pb-btn-dial,
+.vocara-pb-btn-answer {
+  background: #18a058;
+  border-color: #18a058;
+  color: #ffffff;
+}
+
+.vocara-pb-btn-signin:hover:not(:disabled),
+.vocara-pb-btn-dial:hover:not(:disabled),
+.vocara-pb-btn-answer:hover:not(:disabled) {
+  background: #36ad6f;
+  border-color: #36ad6f;
+}
+
+/* 签入中：转圈（替换图标位置） */
+.vocara-pb-btn-signin.is-loading svg {
+  opacity: 0;
+}
+
+.vocara-pb-btn-signin.is-loading::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: vocara-pb-spin 0.7s linear infinite;
+}
+
+@keyframes vocara-pb-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 挂断/拒接：红色描边浅红底，听筒旋转 135° 呈挂断造型 */
+.vocara-pb-btn-hangup,
+.vocara-pb-btn-reject {
+  border-color: #e8809a;
+  color: #d03050;
+  background: rgba(208, 48, 80, 0.06);
+}
+
+.vocara-pb-btn-hangup:hover:not(:disabled),
+.vocara-pb-btn-reject:hover:not(:disabled) {
+  background: rgba(208, 48, 80, 0.14);
+  border-color: #d03050;
+}
+
+.vocara-pb-btn-hangup svg,
+.vocara-pb-btn-reject svg {
+  transform: rotate(135deg);
+}
+
+/* ===== 悬浮提示气泡（主条内向上浮出） ===== */
+.vocara-pb-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+  background: rgba(17, 24, 39, 0.92);
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 6px 9px;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.vocara-pb-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -4px;
+  border: 4px solid transparent;
+  border-top-color: rgba(17, 24, 39, 0.92);
+}
+
+.vocara-pb-iconbtn:hover:not(:disabled) .vocara-pb-tip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== 拨号输入框 ===== */
+.vocara-pb-inputwrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.vocara-pb-input {
+  width: 182px;
+  padding: 6px 34px 6px 12px;
+  font-size: 13px;
+  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  outline: none;
+}
+
+/* 键盘开关：输入框右侧内嵌小图标 */
+.vocara-pb-keypad-toggle {
+  position: absolute;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.vocara-pb-keypad-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vocara-pb-keypad-toggle:hover:not(:disabled),
+.vocara-pb-keypad-toggle.is-active {
+  background: rgba(24, 160, 88, 0.12);
+  color: #18a058;
+}
+
+.vocara-pb-keypad-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 键盘开关的提示气泡 */
+.vocara-pb-keypad-toggle .vocara-pb-tip {
+  bottom: calc(100% + 7px);
+}
+
+.vocara-pb-keypad-toggle:hover:not(:disabled) .vocara-pb-tip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== 拨号键盘浮层 ===== */
+.vocara-pb-keypad {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 222px;
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.18);
+  z-index: 120;
+  animation: vocara-pb-pad-in 0.18s ease both;
+}
+
+@keyframes vocara-pb-pad-in {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 数字键网格：3 列等宽 */
+.vocara-pb-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.vocara-pb-key {
+  height: 48px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  color: #1f2937;
+  cursor: pointer;
+  transition: background 0.13s ease, border-color 0.13s ease, color 0.13s ease;
+}
+
+.vocara-pb-key-num {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.vocara-pb-key-sub {
+  margin-top: 3px;
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: 0.6px;
+  color: #9ca3af;
+}
+
+.vocara-pb-key:hover {
+  background: rgba(24, 160, 88, 0.1);
+  border-color: #18a058;
+  color: #065f46;
+}
+
+.vocara-pb-key:active {
+  background: rgba(24, 160, 88, 0.2);
+}
+
+/* 底部工具栏：清除 / 呼叫 / 退格 */
+.vocara-pb-keypad-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vocara-pb-keypad-tool {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d1d5db;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #4b5563;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.vocara-pb-keypad-tool svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vocara-pb-keypad-tool:hover {
+  background: #f3f4f6;
+}
+
+/* 呼叫：绿色宽按钮，占据工具栏剩余空间 */
+.vocara-pb-keypad-call {
+  flex: 1;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: #18a058;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vocara-pb-keypad-call svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vocara-pb-keypad-call:hover {
+  background: #36ad6f;
+}
+
+.vocara-pb-input::placeholder {
+  color: #9ca3af;
+}
+
+.vocara-pb-input:focus {
+  border-color: #18a058;
+}
+
+.vocara-pb-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== 通话面板信息 ===== */
+.vocara-pb-peericon {
+  display: inline-flex;
+  color: #18a058;
+  flex: none;
+}
+
+.vocara-pb-peericon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vocara-pb-callnum {
+  font-weight: 600;
+  color: #111827;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vocara-pb-calldetail {
+  color: #6b7280;
+  min-width: 58px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== 呼叫状态卡（绝对定位浮于主条下方，不占文档流，主条位置不受影响） ===== */
+.vocara-pb-incoming {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #18a058;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  z-index: 100;
+}
+
+/* 来电态：弹入动画结束后绿色光晕脉冲持续 */
+.vocara-pb-incoming--incoming {
+  border-color: #18a058;
+  animation:
+    vocara-pb-card-in 0.22s cubic-bezier(0.21, 1.02, 0.55, 1.01) both,
+    vocara-pb-glow-green 1.4s ease-in-out 0.22s infinite;
+}
+
+/* 呼出态：蓝色光晕脉冲，与来电方向区分 */
+.vocara-pb-incoming--outgoing {
+  border-color: #2563eb;
+  animation:
+    vocara-pb-card-in 0.22s cubic-bezier(0.21, 1.02, 0.55, 1.01) both,
+    vocara-pb-glow-blue 1.4s ease-in-out 0.22s infinite;
+}
+
+/* 卡片弹入：淡入 + 下滑 + 轻微缩放 */
+@keyframes vocara-pb-card-in {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+@keyframes vocara-pb-glow-green {
+  0%, 100% { box-shadow: 0 8px 24px rgba(24, 160, 88, 0.12); }
+  50% { box-shadow: 0 8px 28px rgba(24, 160, 88, 0.42); }
+}
+
+@keyframes vocara-pb-glow-blue {
+ 0%, 100% { box-shadow: 0 8px 24px rgba(37, 99, 235, 0.12); }
+ 50% { box-shadow: 0 8px 28px rgba(37, 99, 235, 0.42); }
+}
+
+/* 卡片左侧脉冲图标 */
+.vocara-pb-incoming-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.vocara-pb-incoming--incoming .vocara-pb-incoming-icon {
+  background: #18a058;
+  animation: vocara-pb-blink 0.8s ease-in-out infinite;
+}
+
+.vocara-pb-incoming--outgoing .vocara-pb-incoming-icon {
+  background: #2563eb;
+  animation: vocara-pb-blink 0.8s ease-in-out infinite;
+}
+
+.vocara-pb-incoming-caller {
+  font-weight: 600;
+}
+
+.vocara-pb-incoming--incoming .vocara-pb-incoming-caller {
+  color: #065f46;
+}
+
+.vocara-pb-incoming--outgoing .vocara-pb-incoming-caller {
+  color: #1d4ed8;
+}
+
+/* 状态卡内提示气泡向下浮出（卡片位于主条下方，向上会被主条遮挡） */
+.vocara-pb-incoming .vocara-pb-tip {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.vocara-pb-incoming .vocara-pb-tip::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(17, 24, 39, 0.92);
+}
+
+.vocara-pb-incoming .vocara-pb-iconbtn:hover:not(:disabled) .vocara-pb-tip {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== 座席状态下拉 ===== */
+.vocara-pb-select {
+  appearance: none;
+  border: 1px solid #18a058;
+  background-color: rgba(24, 160, 88, 0.08);
+  color: #18a058;
+  border-radius: 8px;
+  padding: 6px 26px 6px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2318a058' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.vocara-pb-select:hover:not(:disabled) {
+  background-color: rgba(24, 160, 88, 0.16);
+}
+
+.vocara-pb-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

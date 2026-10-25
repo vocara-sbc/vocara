@@ -1,0 +1,103 @@
+# Vocara 前端入口 Nginx 配置模板
+#
+# 五组反向代理与 vite dev 代理（vite.config.ts）逐一同构：
+#   /api       -> admin        （不重写路径）
+#   /callapi   -> callctrl     （重写为 /api/v1/call）
+#   /agentapi  -> agentcenter  （重写为 /api/v1/agent）
+#   /ws        -> push         （WebSocket）
+#   /sip-ws    -> FreeSWITCH   （WebSocket，去前缀）
+#
+# ${VOCARA_*_ADDR} 由 envsubst 在容器启动时按环境变量渲染（仅渲染 VOCARA_ 前缀变量，
+# nginx 内置变量如 $http_upgrade 保持原样）。K8s 环境取值为同名 Service。
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen       80;
+    # HTTPS：WebRTC getUserMedia 仅存在于安全上下文。经节点 IP 以 http 访问时浏览器会禁用麦克风，
+    # 导致座席"接听"拿不到麦克风、发不出 SIP 200 OK。这里在同端口加 443 ssl 终结 TLS，
+    # 页面变 https 后 call store 会把 SIP WebSocket 自动切到 wss（nginx 反代到 FS 明文的 5066）。
+    # 证书经 K8s Secret 挂载到 /etc/nginx/certs/（见 vocara-web.yaml 与自签证书生成步骤）。
+    listen       443 ssl http2;
+    server_name  _;
+
+    ssl_certificate     /etc/nginx/certs/tls.crt;
+    ssl_certificate_key /etc/nginx/certs/tls.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    root   ${VOCARA_WEB_ROOT};
+    index  index.html;
+
+    client_max_body_size 10m;
+
+    # gzip
+    gzip              on;
+    gzip_min_length   1024;
+    gzip_comp_level   5;
+    gzip_types        text/plain text/css application/javascript application/json
+                      image/svg+xml application/x-font-ttf font/woff font/woff2;
+
+    proxy_http_version 1.1;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+    proxy_connect_timeout 30s;
+    proxy_send_timeout    60s;
+    proxy_read_timeout    60s;
+
+    # ---- admin 管理后台 API（路径不重写）----
+    location /api {
+        proxy_pass http://${VOCARA_ADMIN_ADDR};
+    }
+
+    # ---- callctrl 呼叫控制：/callapi/** -> /api/v1/call/** ----
+    location = /callapi {
+        proxy_pass http://${VOCARA_CALLCTRL_ADDR}/api/v1/call;
+    }
+    location /callapi/ {
+        proxy_pass http://${VOCARA_CALLCTRL_ADDR}/api/v1/call/;
+    }
+
+    # ---- agentcenter 座席中心：/agentapi/** -> /api/v1/agent/** ----
+    location = /agentapi {
+        proxy_pass http://${VOCARA_AGENTCENTER_ADDR}/api/v1/agent;
+    }
+    location /agentapi/ {
+        proxy_pass http://${VOCARA_AGENTCENTER_ADDR}/api/v1/agent/;
+    }
+
+    # ---- push WebSocket 实时推送 ----
+    location /ws {
+        proxy_pass http://${VOCARA_PUSH_ADDR};
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # 长连接：WS 空闲时长按推送服务心跳周期放宽
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ---- FreeSWITCH WebRTC：/sip-ws/** -> FS 根路径 /** ----
+    location = /sip-ws {
+        proxy_pass http://${VOCARA_SIP_ADDR}/;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+    location /sip-ws/ {
+        proxy_pass http://${VOCARA_SIP_ADDR}/;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ---- 前端静态资源与 SPA history 入口兜底 ----
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

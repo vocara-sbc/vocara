@@ -1,0 +1,141 @@
+/* Vocara 全局样式 - 浅色绿色主题 */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f5f7fa;
+  color: #1f2937;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: #18a058;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+a:hover {
+  color: #0c7a43;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 通用工具类 */
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.text-primary {
+  color: #18a058;
+}
+
+.text-success {
+  color: #18a058;
+}
+
+.text-warning {
+  color: #f0a020;
+}
+
+.text-error {
+  color: #d03050;
+}
+
+.text-info {
+  color: #2080f0;
+}
+
+.text-muted {
+  color: #6b7280;
+}
+
+.mt-8 {
+  margin-top: 8px;
+}
+
+.mt-16 {
+  margin-top: 16px;
+}
+
+.mt-24 {
+  margin-top: 24px;
+}
+
+.mb-8 {
+  margin-bottom: 8px;
+}
+
+.mb-16 {
+  margin-bottom: 16px;
+}
+
+.mb-24 {
+  margin-bottom: 24px;
+}
+
+/* 悬浮卡片统一风格：圆角 + 轻阴影，页面卡片浮于浅灰绿底色之上 */
+.n-card {
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(15, 40, 25, 0.06);
+}
+
+/* 弹窗卡片底部操作区：按钮统一靠右排列，按钮间留固定间距 */
+.n-card__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* NProgress 颜色覆盖 */
+#nprogress .bar {
+  background: #18a058 !important;
+}
+
+#nprogress .peg {
+  box-shadow: 0 0 10px #18a058, 0 0 5px #18a058 !important;
+}
+
+#nprogress .spinner-icon {
+  border-top-color: #18a058 !important;
+  border-left-color: #18a058 !important;
+}

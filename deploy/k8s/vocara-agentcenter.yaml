@@ -1,0 +1,139 @@
+# ============================================================
+# Vocara 呼叫中心系统 - vocara-agentcenter 座席中心
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-agentcenter
+  namespace: vocara
+  labels:
+    app: vocara-agentcenter
+    app.kubernetes.io/name: vocara-agentcenter
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+  selector:
+    app: vocara-agentcenter
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-agentcenter
+  namespace: vocara
+  labels:
+    app: vocara-agentcenter
+    app.kubernetes.io/name: vocara-agentcenter
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-agentcenter
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-agentcenter
+      annotations:
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: vocara-agentcenter
+          image: registry.example.com/vocara/vocara-agentcenter:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # 配置文件路径：指向下方 ConfigMap 挂载的 config.yaml
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # 应用密钥：JWT 签名与内部服务间 X-Internal-Token（五服务统一值）
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: 修改
+
+            # 数据库密码
+            - name: VOCARA_MYSQL_PASSWORD
+              value: "vocara123"  # TODO: 修改
+
+            # Redis 密码
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""
+
+            # NATS 密码
+            - name: VOCARA_NATS_PASSWORD
+              value: ""
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-agentcenter-config
+        

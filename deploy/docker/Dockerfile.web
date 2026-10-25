@@ -1,0 +1,38 @@
+# Vocara 管理后台前端镜像：Node 构建 -> Nginx 运行（统一入口：静态托管 + 五组反向代理）
+#
+# 构建示例：
+#   docker build -f deploy/docker/Dockerfile.web \
+#     -t registry.example.com/vocara/vocara-web:1.0.0 .
+
+# ---- 构建层 ----
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY business/web/admin/package.json business/web/admin/package-lock.json ./
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm ci
+
+# 电话条（混淆产物）与动态表单 SDK 位于 public/，随源码一并拷贝
+COPY business/web/admin/ ./
+RUN npm run build
+
+# ---- 运行层 ----
+FROM nginx:1.27-alpine
+
+# 上游服务默认地址（K8s 下为同名 Service）。
+# 部署时可用同名环境变量覆盖；NGINX_ENVSUBST_FILTER 限定只渲染 VOCARA_ 前缀变量，
+# nginx 自身的 $http_upgrade 等变量不参与替换。
+ENV VOCARA_ADMIN_ADDR=vocara-admin:8080 \
+    VOCARA_AGENTCENTER_ADDR=vocara-agentcenter:8081 \
+    VOCARA_ACD_ADDR=vocara-acd:8082 \
+    VOCARA_CALLCTRL_ADDR=vocara-callctrl:8083 \
+    VOCARA_PUSH_ADDR=vocara-push:8084 \
+    VOCARA_SIP_ADDR=vocara-fs-agent:5066 \
+    VOCARA_WEB_ROOT=/usr/share/nginx/html \
+    NGINX_ENVSUBST_FILTER=VOCARA_
+
+COPY deploy/docker/nginx/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80 443

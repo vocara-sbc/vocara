@@ -1,0 +1,141 @@
+# ============================================================
+# Vocara 呼叫中心系统 - vocara-callctrl 呼叫控制
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-callctrl
+  namespace: vocara
+  labels:
+    app: vocara-callctrl
+    app.kubernetes.io/name: vocara-callctrl
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+  selector:
+    app: vocara-callctrl
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-callctrl
+  namespace: vocara
+  labels:
+    app: vocara-callctrl
+    app.kubernetes.io/name: vocara-callctrl
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-callctrl
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-callctrl
+      annotations:
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: vocara-callctrl
+          image: registry.example.com/vocara/vocara-callctrl:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8083
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # 配置文件路径：指向下方 ConfigMap 挂载的 config.yaml
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # 应用密钥：内部服务间 X-Internal-Token（五服务统一值）
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: 修改，建议使用 Secret
+
+            # 座席侧媒体节点地址（hostNetwork 无集群 Service，按实际节点 IP 配置）
+            - name: VOCARA_ESL_HOST
+              value: "192.168.100.11"  # FS-Agent 座席侧节点地址（hostNetwork）
+
+            # 密码与其余后端服务保持一致（明文占位，生产环境建议改用 Secret）
+            - name: VOCARA_MYSQL_PASSWORD
+              value: "vocara123"  # TODO: 与 MySQL root 密码一致
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""  # Redis 未启用密码
+            - name: VOCARA_NATS_PASSWORD
+              value: ""  # NATS 未启用认证
+            - name: VOCARA_ESL_PASSWORD
+              value: "ClueCon"  # 与 FS event_socket.conf.xml 的 password 一致
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-callctrl-config
+        

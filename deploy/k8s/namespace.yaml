@@ -1,0 +1,10 @@
+# Vocara 呼叫中心系统 - 命名空间
+# 所有 Vocara 相关资源都部署在此命名空间下
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vocara
+  labels:
+    name: vocara
+    app.kubernetes.io/name: vocara
+    app.kubernetes.io/part-of: vocara

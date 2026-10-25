@@ -1,0 +1,13 @@
+go 1.22
+
+toolchain go1.22.12
+
+// 业务 workspace：仅含业务服务与共享基础库、契约，不含核心模块。
+use (
+	./business/services/acd
+	./business/services/admin
+	./business/services/agentcenter
+	./business/services/push
+	./contracts
+	./pkg
+)

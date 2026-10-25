@@ -1,0 +1,93 @@
+# vim:set ft=dockerfile:
+# FreeSWITCH 1.10.10 编译镜像。
+# 基础镜像 debian/eol:bullseye：预装包版本与 Debian 归档冻结线一致，
+# 满足 apt build-dep 对运行库与开发包同版的要求。
+FROM debian/eol:bullseye
+
+# set environment
+ENV BASE_DIR="/usr/local/freeswitch"
+# SIGNALWIRE_TOKEN：FreeSWITCH 官方软件源访问凭证，由构建参数 --build-arg 注入
+ARG SIGNALWIRE_TOKEN
+
+# 包源统一指向阿里云 debian-archive（bullseye 归档镜像的可用镜像源）；
+# debian-security 的 bullseye 包池为空，对应源行移除。
+# 基础镜像内尚无 ca-certificates，源地址使用 http。
+RUN sed -i "s/# alias ll=/alias ll=/g" ~/.bashrc \
+    && cp -a /etc/apt/sources.list /etc/apt/sources.list.bak \
+    && sed -i "s@http://archive.debian.org/debian@http://mirrors.aliyun.com/debian-archive/debian@g" /etc/apt/sources.list \
+    && sed -i "s@http://deb.debian.org/debian@http://mirrors.aliyun.com/debian-archive/debian@g" /etc/apt/sources.list \
+    && sed -i "\@debian-security@d" /etc/apt/sources.list
+
+# wget、lsb-release、ca-certificates 为注册并访问官方 https 软件源的前置工具
+RUN apt-get update -y && apt-get install -y wget lsb-release ca-certificates
+
+# 注册 FreeSWITCH 官方软件源（签名密钥与源认证）
+RUN wget --http-user=signalwire --http-password=${SIGNALWIRE_TOKEN} -O /usr/share/keyrings/signalwire-freeswitch-repo.gpg https://freeswitch.signalwire.com/repo/deb/debian-release/signalwire-freeswitch-repo.gpg
+RUN echo "machine freeswitch.signalwire.com login signalwire password ${SIGNALWIRE_TOKEN}" > /etc/apt/auth.conf
+RUN echo "deb [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ `lsb_release -sc` main" > /etc/apt/sources.list.d/freeswitch.list
+RUN echo "deb-src [signed-by=/usr/share/keyrings/signalwire-freeswitch-repo.gpg] https://freeswitch.signalwire.com/repo/deb/debian-release/ `lsb_release -sc` main" >> /etc/apt/sources.list.d/freeswitch.list
+
+# 核心运行库取 bullseye 主归档版本，与 build-dep 解析出的开发包保持精确同版
+RUN apt-get update -y \
+    && apt-get install -y --allow-downgrades \
+       libc6/bullseye libssl1.1/bullseye libudev1/bullseye libsepol1/bullseye \
+       perl-base/bullseye perl/bullseye perl-modules-5.32/bullseye libperl5.32/bullseye \
+    && apt-get build-dep freeswitch -y
+
+# libks、signalwire-client-c 为编译依赖，同时属于 FreeSWITCH 运行时共享库
+RUN apt-get update -y && apt-get install -y libks signalwire-client-c \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ADD freeswitch-1.10.10/ root/freeswitch-1.10.10/
+# 模块裁剪与媒体栈：
+# - mod_spandsp（传真/TDD）不纳入编译，呼叫中心无传真业务；
+# - mod_event_socket、mod_sofia、mod_opus、mod_rtc 默认启用；
+# - WebRTC 媒体栈为 mod_rtc，DTLS 1.2 由 switch_rtp 原生提供，SRTP 随 DTLS 协商。
+RUN cd ~/freeswitch-1.10.10 \
+    && sed -i 's|^applications/mod_spandsp|#applications/mod_spandsp|' build/modules.conf.in \
+    && grep -n 'mod_spandsp\|mod_event_socket\|mod_sofia\|mod_opus\|mod_rtc' build/modules.conf.in
+
+# 编译安装
+RUN cd ~/freeswitch-1.10.10 \
+    && chmod -R +x libs/ \
+    && sh bootstrap.sh -j \
+    && sh configure -C \
+    && make -j"$(nproc)" \
+    && make install
+
+# 安装最小运行时共享库集合。完整编译依赖集合保留在镜像中，
+# 以保证 libfreeswitch 与各模块动态链接的完整性。
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends \
+       libssl1.1 libspeex1 libspeexdsp1 libcurl4 libsqlite3-0 libedit2 \
+       libjpeg62-turbo libpcre3 zlib1g liblzma5 libsndfile1 libopus0 libldns3 liblua5.3-0 \
+       libfreetype6 libks signalwire-client-c ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* ~/freeswitch-1.10.10
+
+# 运行库完整性自检：主程序、共享库与模块不得存在缺失链接，否则构建失败
+RUN MISSING=$(ldd /usr/local/freeswitch/bin/* /usr/local/freeswitch/lib/*.so* /usr/local/freeswitch/mod/*.so 2>/dev/null | grep 'not found' | sort -u) \
+    && if [ -n "$MISSING" ]; then echo "MISSING LIBS:" && echo "$MISSING" && exit 1; fi
+
+# locale：bullseye 的 glibc 2.31 内置 C.UTF-8
+ENV LANG C.UTF-8
+
+RUN ln -sf /usr/local/freeswitch/bin/freeswitch /usr/bin/ \
+    && ln -sf /usr/local/freeswitch/bin/fs_cli /usr/bin/
+
+## 端口声明
+## 8021/tcp ESL；5060/5061、5080/5081 SIP/SIPS；7443 SIP-over-WSS；
+## 5070；16384-32768、64535-65535/udp RTP
+EXPOSE 8021/tcp
+EXPOSE 5060/tcp 5060/udp 5080/tcp 5080/udp
+EXPOSE 5061/tcp 5061/udp 5081/tcp 5081/udp
+EXPOSE 7443/tcp
+EXPOSE 5070/udp 5070/tcp
+EXPOSE 64535-65535/udp
+EXPOSE 16384-32768/udp
+
+# 文件句柄上限由容器运行参数注入，镜像内不配置 security limits。
+
+WORKDIR $BASE_DIR/bin
+
+CMD ["freeswitch"]

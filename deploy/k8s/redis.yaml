@@ -1,0 +1,188 @@
+# ============================================================
+# Vocara 呼叫中心系统 - Redis 7
+# 有状态服务，使用 StatefulSet + PVC 持久化
+# 开启 AOF 持久化
+# ============================================================
+
+---
+# Redis 服务
+kind: Service
+apiVersion: v1
+metadata:
+  name: vocara-redis
+  namespace: vocara
+  labels:
+    app: vocara-redis
+    app.kubernetes.io/name: vocara-redis
+    app.kubernetes.io/part-of: vocara
+spec:
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+  selector:
+    app: vocara-redis
+  type: ClusterIP
+
+---
+# Redis 配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-redis-config
+  namespace: vocara
+  labels:
+    app: vocara-redis
+data:
+  redis.conf: |
+    # 基本设置
+    bind 0.0.0.0
+    port 6379
+    daemonize no
+    supervised no
+    pidfile /var/run/redis/redis.pid
+
+    # 内存设置
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+
+    # 持久化 - AOF
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+    aof-use-rdb-preamble yes
+
+    # 持久化 - RDB（可选，AOF 为主时保留作为备份）
+    save 900 1
+    save 300 10
+    save 60 10000
+    dbfilename dump.rdb
+    dir /data
+
+    # 日志
+    loglevel notice
+    logfile ""
+
+    # 慢查询
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+
+    # 客户端
+    maxclients 10000
+    timeout 300
+    tcp-keepalive 60
+
+    # 密码（生产环境建议启用，通过环境变量覆盖）
+    # requirepass yourpassword
+
+    # 其他
+    databases 16
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+
+---
+# Redis 持久化存储声明
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vocara-redis-pvc
+  namespace: vocara
+  labels:
+    app: vocara-redis
+    app.kubernetes.io/name: vocara-redis
+    app.kubernetes.io/part-of: vocara
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: ""  # 使用默认 StorageClass
+
+---
+# Redis StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vocara-redis
+  namespace: vocara
+  labels:
+    app: vocara-redis
+    app.kubernetes.io/name: vocara-redis
+    app.kubernetes.io/part-of: vocara
+spec:
+  serviceName: vocara-redis
+  replicas: 1  # 单实例 Redis，生产环境建议使用 Redis Cluster 或哨兵模式
+  selector:
+    matchLabels:
+      app: vocara-redis
+  template:
+    metadata:
+      labels:
+        app: vocara-redis
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # 就绪探针：检查 Redis 是否可以响应
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # 存活探针
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 5
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: redis-config
+              mountPath: /etc/redis
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: vocara-redis-pvc
+        - name: redis-config
+          configMap:
+            name: vocara-redis-config
+            items:
+              - key: redis.conf
+                path: redis.conf

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- VocaraPhoneBar 电话条 SDK（原生 JS，自包含单文件，暴露 window.VocaraPhoneBar） -->
+    <link rel="stylesheet" href="/phonebar/vocara-phonebar.css" />
+    <script src="/phonebar/vocara-phonebar.js"></script>
+    <!-- VocaraForm 动态表单 SDK（原生 JS，自包含单文件，暴露 window.VocaraForm） -->
+    <!-- 版本查询串用于刷新浏览器对 SDK 单文件的缓存：SDK 重新构建后递增 -->
+    <link rel="stylesheet" href="/form/vocara-form.css?v=20260927b" />
+    <script src="/form/vocara-form.js?v=20260927b"></script>
+    <title>Vocara 呼叫中心管理系统</title>
+    <style>
+      html, body, #app {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background-color: #0f172a;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      }
+      /* 加载动画 */
+      .loading-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      .loading-logo {
+        font-size: 32px;
+        font-weight: 700;
+        color: #00b894;
+        margin-bottom: 24px;
+        letter-spacing: 2px;
+      }
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #1e293b;
+        border-top-color: #00b894;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="loading-container">
+        <div class="loading-logo">VOCARA</div>
+        <div class="loading-spinner"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

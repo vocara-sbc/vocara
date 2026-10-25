@@ -1,0 +1,31 @@
+# ============================================================
+# Vocara 呼叫中心系统 - web 前端 TLS 证书 Secret
+#
+# 自签证书（仅 dev / 内网测试用；生产请替换为正式 CA 证书）。
+# nginx 的 443 ssl 从本 Secret 挂载目录 /etc/nginx/certs/ 读取
+# tls.crt / tls.key（见 vocara-web.yaml 的 tls volume）。
+#
+# SAN 内容：DNS:localhost, IP:127.0.0.1, IP:192.168.100.10, IP:192.168.100.11。
+# 若座席浏览器访问用的是其他节点 IP，需重新生成证书并同步替换下方
+# data.tls.crt / data.tls.key（base64 单行）：
+#   openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+#     -keyout tls.key -out tls.crt -days 365 -subj "/CN=vocara-web" \
+#     -addext "subjectAltName=DNS:localhost,IP:<访问IP1>,IP:<访问IP2>"
+#   openssl base64 -A -in tls.crt   # 去掉换行后填入 data.tls.crt
+#   openssl base64 -A -in tls.key   # 同理填入 data.tls.key
+# ============================================================
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vocara-web-tls
+  namespace: vocara
+  labels:
+    app: vocara-web
+    app.kubernetes.io/name: vocara-web
+    app.kubernetes.io/part-of: vocara
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tDQpNSUlCcHpDQ0FVMmdBd0lCQWdJVWZ0bmhGMmQvZEdOc1dZNkxHOHJPVXpGWWFOc3dDZ1lJS29aSXpqMEVBd0l3DQpGVEVUTUJFR0ExVUVBd3dLZG05allYSmhMWGRsWWpBZUZ3MHlOakV3TWpFeE5ESTBNalZhRncweU56RXdNakV4DQpOREkwTWpWYU1CVXhFekFSQmdOVkJBTU1Dblp2WTJGeVlTMTNaV0l3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPDQpQUU1CQndOQ0FBUkRFOVkwdHY0cnR6T1R2WTNzSk0vb1BzQWFXbGo0Rmg1bW9ROXlTb2tNVXF5QW5XU0FFRDdTDQpvRnQ3YU11T0FNTDF5TFVjWFFuMTRUVnE4bkpDMDV6c28zc3dlVEFkQmdOVkhRNEVGZ1FVZWNmRUNONTV3NldWDQoxM2tYSEp4anJCRU9XTlF3SHdZRFZSMGpCQmd3Rm9BVWVjZkVDTjU1dzZXVjEza1hISnhqckJFT1dOUXdEd1lEDQpWUjBUQVFIL0JBVXdBd0VCL3pBbUJnTlZIUkVFSHpBZGdnbHNiMk5oYkdodmMzU0hCSDhBQUFHSEJNQ29aQXFIDQpCTUNvWkFzd0NnWUlLb1pJemowRUF3SURTQUF3UlFJZ1UzZWlvSlhQcHRobEhTbEEvSkN3cE9ScXpYeHdKZ2tnDQpEYys2TkxKV2xKc0NJUURUejVIUVp6b042WmJSbjRvLzdZa3U2akRUWkFjZGt4Wmg2bVIyNkNpWG5RPT0NCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0NCg==
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tDQpNSUdIQWdFQU1CTUdCeXFHU000OUFnRUdDQ3FHU000OUF3RUhCRzB3YXdJQkFRUWdhMTNCTE5mSzVncERJVTdFDQpkek5qQUxtakZNTEs0RHlCRU5YV093cXc1dWFoUkFOQ0FBUkRFOVkwdHY0cnR6T1R2WTNzSk0vb1BzQWFXbGo0DQpGaDVtb1E5eVNva01VcXlBbldTQUVEN1NvRnQ3YU11T0FNTDF5TFVjWFFuMTRUVnE4bkpDMDV6cw0KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQ0K

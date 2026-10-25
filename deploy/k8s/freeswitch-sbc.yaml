@@ -1,0 +1,96 @@
+# FreeSWITCH SBC 侧部署（hostPath 挂载配置）
+# SBC 侧负责：外部线路接入、客户侧媒体处理、外呼客户侧、录音
+# FreeSWITCH RTP 端口范围大，采用 hostNetwork。
+#
+# 使用说明：
+#   1. 在目标节点准备 hostPath 目录：
+#      mkdir -p /data/vocara/freeswitch/fs-sbc/conf
+#               /data/vocara/freeswitch/fs-sbc/recordings
+#               /data/vocara/freeswitch/fs-sbc/log
+#               /data/vocara/freeswitch/fs-sbc/certs
+#   2. 将 core 仓库 freeswitch/ 目录中 fs-sbc 的 conf 配置复制到节点：
+#      cp -r fs-sbc/conf/* /data/vocara/freeswitch/fs-sbc/conf/
+#   3. 镜像标签按实际私有仓库替换（占位 registry.example.com/vocara/）。
+#   4. kubectl apply -f deploy/k8s/freeswitch-sbc.yaml
+#
+# FreeSWITCH 默认 CMD 会 daemonize 后台运行导致容器退出，
+# 以 -nf 前台运行；-nonat 关闭 Auto-NAT（hostNetwork 内网直连）。
+
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: vocara-fs-sbc
+  namespace: vocara
+  labels:
+    app: vocara-fs-sbc
+    role: sbc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-fs-sbc
+  template:
+    metadata:
+      labels:
+        app: vocara-fs-sbc
+        role: sbc
+    spec:
+      enableServiceLinks: false
+      volumes:
+        - name: fs-conf
+          hostPath:
+            path: /data/vocara/freeswitch/fs-sbc/conf
+            type: DirectoryOrCreate
+        - name: fs-records
+          hostPath:
+            path: /data/vocara/freeswitch/fs-sbc/recordings
+            type: DirectoryOrCreate
+        - name: fs-log
+          hostPath:
+            path: /data/vocara/freeswitch/fs-sbc/log
+            type: DirectoryOrCreate
+        - name: fs-certs
+          hostPath:
+            path: /data/vocara/freeswitch/fs-sbc/certs
+            type: DirectoryOrCreate
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+            type: File
+      containers:
+        - name: freeswitch
+          image: registry.example.com/vocara/freeswitch:1.10.10
+          command:
+            - /usr/local/freeswitch/bin/freeswitch
+          args:
+            - -nf
+            - -nonat
+          env:
+            # SBC 侧节点 SIP domain（软电话注册地址），联调环境指向节点实际 IP
+            - name: VOCARA_FS_SBC_DOMAIN
+              value: "192.168.100.10"
+            # admin 服务地址（xml_curl 动态目录/拨号计划回调目标）；
+            # hostNetwork 无法解析集群 Service 名，经 admin 的 NodePort 直达
+            - name: VOCARA_ADMIN_ADDR
+              value: "192.168.100.10:30080"
+            # xml_curl 回调鉴权 token，与 admin 的 VOCARA_APP_SECRET_KEY 同值
+            - name: VOCARA_FS_ADMIN_TOKEN
+              value: "change-me-to-a-strong-secret-key"
+          volumeMounts:
+            - name: fs-conf
+              mountPath: /usr/local/freeswitch/conf
+            - name: fs-records
+              mountPath: /usr/local/freeswitch/recordings
+            - name: fs-log
+              mountPath: /usr/local/freeswitch/log
+            - name: fs-certs
+              mountPath: /usr/local/freeswitch/certs
+            - name: localtime
+              mountPath: /etc/localtime
+              readOnly: true
+          securityContext:
+            # SCHED_FIFO 实时调度需要特权
+            privileged: true
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: master1

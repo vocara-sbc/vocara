@@ -1,0 +1,119 @@
+
+# FreeSWITCH 座席侧部署（hostPath 挂载配置）
+# 座席侧负责：座席分机注册、座席侧媒体处理、座席侧桥接
+# FreeSWITCH RTP 端口范围大，采用 hostNetwork。
+#
+# 使用说明：
+#   1. 在目标节点准备 hostPath 目录：
+#      mkdir -p /data/vocara/freeswitch/fs-agent/conf
+#               /data/vocara/freeswitch/fs-agent/recordings
+#               /data/vocara/freeswitch/fs-agent/log
+#               /data/vocara/freeswitch/fs-agent/certs
+#   2. 将 core 仓库 freeswitch/ 目录中 fs-agent 的 conf 配置复制到节点：
+#      cp -r fs-agent/conf/* /data/vocara/freeswitch/fs-agent/conf/
+#      WebRTC 证书在 certs 目录执行 gen-certs.sh 生成。
+#   3. 镜像标签按实际私有仓库替换（占位 registry.example.com/vocara/）。
+#   4. kubectl apply -f deploy/k8s/freeswitch-agent.yaml
+#
+# FreeSWITCH 默认 CMD 会 daemonize 后台运行导致容器退出，
+# 以 -nf 前台运行；-nonat 关闭 Auto-NAT（hostNetwork 内网直连）。
+
+---
+# Service：暴露 WebRTC WebSocket 端口，供 vocara-web 的 /sip-ws 反代连接。
+# hostNetwork Pod 的 endpoint 为节点 IP，TCP 端口转发由 kube-proxy 完成。
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-fs-agent
+  namespace: vocara
+  labels:
+    app: vocara-fs-agent
+    role: agent
+spec:
+  type: ClusterIP
+  ports:
+    - name: sip-ws
+      port: 5066
+      targetPort: 5066
+      protocol: TCP
+  selector:
+    app: vocara-fs-agent
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: vocara-fs-agent
+  namespace: vocara
+  labels:
+    app: vocara-fs-agent
+    role: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-fs-agent
+  template:
+    metadata:
+      labels:
+        app: vocara-fs-agent
+        role: agent
+    spec:
+      enableServiceLinks: false
+      volumes:
+        - name: fs-conf
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/conf
+            type: DirectoryOrCreate
+        - name: fs-records
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/recordings
+            type: DirectoryOrCreate
+        - name: fs-log
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/log
+            type: DirectoryOrCreate
+        - name: fs-certs
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/certs
+            type: DirectoryOrCreate
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+            type: File
+      containers:
+        - name: freeswitch
+          image: registry.example.com/vocara/freeswitch:1.10.10
+          command:
+            - /usr/local/freeswitch/bin/freeswitch
+          args:
+            - -nf
+            - -nonat
+          env:
+            # 座席侧节点 SIP domain（分机/WebRTC 注册地址），联调环境指向节点实际 IP
+            - name: VOCARA_FS_AGENT_DOMAIN
+              value: "192.168.100.11"
+            # admin 服务地址（xml_curl 动态目录/拨号计划回调目标）；
+            # hostNetwork 无法解析集群 Service 名，经 admin 的 NodePort 直达
+            - name: VOCARA_ADMIN_ADDR
+              value: "192.168.100.10:30080"
+            # xml_curl 回调鉴权 token，与 admin 的 VOCARA_APP_SECRET_KEY 同值
+            - name: VOCARA_FS_ADMIN_TOKEN
+              value: "change-me-to-a-strong-secret-key"
+          volumeMounts:
+            - name: fs-conf
+              mountPath: /usr/local/freeswitch/conf
+            - name: fs-records
+              mountPath: /usr/local/freeswitch/recordings
+            - name: fs-log
+              mountPath: /usr/local/freeswitch/log
+            - name: fs-certs
+              mountPath: /usr/local/freeswitch/certs
+            - name: localtime
+              mountPath: /etc/localtime
+              readOnly: true
+          securityContext:
+            # SCHED_FIFO 实时调度需要特权
+            privileged: true
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: node1

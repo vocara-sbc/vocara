@@ -1,0 +1,143 @@
+# ============================================================
+# Vocara 呼叫中心系统 - vocara-acd 智能排队
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-acd
+  namespace: vocara
+  labels:
+    app: vocara-acd
+    app.kubernetes.io/name: vocara-acd
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+  selector:
+    app: vocara-acd
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-acd
+  namespace: vocara
+  labels:
+    app: vocara-acd
+    app.kubernetes.io/name: vocara-acd
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-acd
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-acd
+      annotations:
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: vocara-acd
+          image: registry.example.com/vocara/vocara-acd:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8082
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # 配置文件路径：指向下方 ConfigMap 挂载的 config.yaml
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # 应用密钥：内部服务间 X-Internal-Token（五服务统一值）
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: 修改
+
+            # 数据库密码
+            - name: VOCARA_MYSQL_PASSWORD
+              value: "vocara123"  # TODO: 修改
+
+            # Redis 密码
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""
+
+            # NATS 密码
+            - name: VOCARA_NATS_PASSWORD
+              value: ""
+
+            # 调用座席中心内部接口的 X-Internal-Token（与座席中心 app.secret_key 同值）
+            - name: VOCARA_ACD_AGENT_CENTER_TOKEN
+              value: "change-me-to-a-strong-secret-key"  # TODO: 修改
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-acd-config
+        

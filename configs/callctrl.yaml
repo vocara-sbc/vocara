@@ -1,0 +1,130 @@
+# Vocara Call Control 服务配置
+
+app:
+  name: vocara-callctrl
+  version: 1.0.0
+  env: dev # dev | test | prod
+  secret_key: vocara-dev-shared-secret-2026
+  timezone: Asia/Shanghai
+
+server:
+  host: 0.0.0.0
+  port: 8083
+  mode: debug # debug | release
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  max_request_body: 10485760
+  shutdown_timeout: 30
+
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: "vocara123"
+  database: vocara
+  charset: utf8mb4
+  collation: utf8mb4_unicode_ci
+  parse_time: true
+  loc: Local
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 60
+  conn_max_idle_time: 10
+  auto_migrate: false
+  slow_threshold: 1000
+  log_level: warn
+
+redis:
+  mode: single # single | cluster | sentinel
+  addrs: 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  master_name: ""
+  pool_size: 50
+  min_idle_conns: 10
+  max_retries: 3
+  dial_timeout: 5000
+  read_timeout: 3000
+  write_timeout: 3000
+  pool_timeout: 4000
+  idle_timeout: 300
+  idle_check_freq: 60
+
+nats:
+  urls: nats://127.0.0.1:4222
+  user: ""
+  password: ""
+  token: ""
+  reconnect_wait: 2
+  max_reconnect: -1
+  reconnect_buf: 8388608
+  timeout: 5
+  flush_timeout: 5
+  cluster_id: vocara
+  client_id: callctrl-service
+
+# ESL 配置
+esl:
+  host: 127.0.0.1
+  port: 8021
+  password: ClueCon
+  timeout: 10
+  reconnect: true
+  reconnect_wait: 5
+  max_reconnect: -1
+  event_filter: ""
+  buffer_size: 1000
+
+# 呼叫控制专属配置
+callctrl:
+  # FS 实例标识
+  fs_instance: fs-agent-01
+  # ACD 服务地址（呼入排队）
+  acd_base_url: "http://127.0.0.1:8082"
+  # 座席中心地址（振铃失败时释放座席回就绪；内部接口鉴权用 app.secret_key）
+  agentcenter_base_url: "http://127.0.0.1:8081"
+  # admin 服务地址（呼入 DID 路由动态拉取，主数据源；不可达时回落下方静态 inbound_routes）
+  admin_base_url: "http://127.0.0.1:8080"
+  # 呼入路由缓存刷新间隔（秒）
+  route_refresh_interval: 60
+  # 呼入接入号 → 队列路由（静态回落配置：admin 不可达时兜底；正常由 admin 呼入接待动态下发）
+  # did: 客户拨打的号码；queue_id/skill_group_id 对应队列与技能组
+  inbound_routes:
+    - { did: "6000", queue_id: 1, skill_group_id: 1 }
+  # 默认外呼网关
+  default_gateway: default
+  # 默认录音目录
+  record_dir: /data/records
+  # 默认录音格式
+  record_format: wav
+  # 最大通话时长（秒），0 不限制
+  max_call_duration: 0
+  # 默认外呼超时（秒）
+  default_originate_timeout: 30
+  # 事件处理 worker 数
+  event_worker_num: 4
+  # 事件缓冲区大小
+  event_buffer_size: 1000
+  # 通话事件 NATS topic
+  call_event_nats_topic: vocara.call.event
+
+# 日志配置
+log:
+  level: info     # debug | info | warn | error
+  format: json    # json | console
+  output: "file"   # stdout | file | both——仅写文件，避免与 run.cmd stdout 重定向产生重复日志
+  file_path: ./logs/callctrl.log
+  max_size: 100   # MB
+  max_age: 30     # days
+  max_backups: 10
+  compress: true
+  caller: true
+  caller_skip: 1
+
+# License 授权：离线 vocara.lic，进程内置公钥本地验签
+license:
+  file: ./license/vocara.lic   # License 文件路径
+  check_interval: 3600         # 运行期复校间隔（秒）
+  fail_open: false             # 验签或指纹异常时放行业务，仅排障临时使用

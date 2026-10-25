@@ -1,0 +1,222 @@
+# ============================================================
+# Vocara 呼叫中心系统 - MySQL 8.0
+# 有状态服务，使用 StatefulSet + PVC 持久化
+# ============================================================
+
+---
+# MySQL 服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-mysql
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+    app.kubernetes.io/name: vocara-mysql
+    app.kubernetes.io/part-of: vocara
+spec:
+  # NodePort：本地（宿主机/开发机）直连查看数据
+  type: NodePort
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      protocol: TCP
+      nodePort: 3306
+  selector:
+    app: vocara-mysql
+
+---
+# MySQL 配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-mysql-config
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+data:
+  my.cnf: |
+    [mysqld]
+    # 基本设置
+    datadir=/var/lib/mysql
+    socket=/var/run/mysqld/mysqld.sock
+    pid-file=/var/run/mysqld/mysqld.pid
+
+    # 字符集
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+    init-connect='SET NAMES utf8mb4'
+
+    # 连接设置
+    max_connections=500
+    max_connect_errors=1000
+    wait_timeout=28800
+    interactive_timeout=28800
+
+    # 缓冲池设置（根据实际内存调整）
+    innodb_buffer_pool_size=512M
+    innodb_log_file_size=128M
+    innodb_log_buffer_size=16M
+    innodb_flush_log_at_trx_commit=1
+    innodb_file_per_table=1
+    innodb_flush_method=O_DIRECT
+
+    # 慢查询日志
+    slow_query_log=1
+    slow_query_log_file=/var/lib/mysql/slow.log
+    long_query_time=2
+
+    # 其他
+    skip-name-resolve
+    default-time-zone='+08:00'
+
+    [client]
+    default-character-set=utf8mb4
+
+    [mysql]
+    default-character-set=utf8mb4
+
+---
+# MySQL 初始化脚本 ConfigMap
+# 将 db/migrations/ 下的 SQL 文件挂载到 /docker-entrypoint-initdb.d/
+# MySQL 首次启动时会自动执行该目录下的 .sql / .sh 文件
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-mysql-initdb
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+data:
+  01-init-database.sql: |
+    -- 创建 vocara 数据库
+    CREATE DATABASE IF NOT EXISTS vocara
+      DEFAULT CHARACTER SET utf8mb4
+      DEFAULT COLLATE utf8mb4_unicode_ci;
+
+    -- 注：生产环境建议创建专用数据库用户，不使用 root
+    -- GRANT ALL PRIVILEGES ON vocara.* TO 'vocara'@'%' IDENTIFIED BY 'your_password';
+    -- FLUSH PRIVILEGES;
+
+---
+# MySQL 持久化存储声明
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vocara-mysql-pvc
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+    app.kubernetes.io/name: vocara-mysql
+    app.kubernetes.io/part-of: vocara
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: ""  # 使用默认 StorageClass，如需指定请取消注释
+
+---
+# MySQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vocara-mysql
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+    app.kubernetes.io/name: vocara-mysql
+    app.kubernetes.io/part-of: vocara
+spec:
+  serviceName: vocara-mysql
+  replicas: 1  # 单实例 MySQL，生产环境建议使用主从或云数据库
+  selector:
+    matchLabels:
+      app: vocara-mysql
+  template:
+    metadata:
+      labels:
+        app: vocara-mysql
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60  # MySQL 需要更长时间优雅关闭
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          env:
+            # MySQL root 密码（生产环境请修改为强密码或使用 Secret）
+            - name: MYSQL_ROOT_PASSWORD
+              value: "vocara123"  # TODO: 修改为强密码
+            # 也可以通过 Secret 引用：
+            # - name: MYSQL_ROOT_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: vocara-secrets
+            #       key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: "vocara"
+            - name: TZ
+              value: "Asia/Shanghai"
+          # 资源请求和限制
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          # 就绪探针：检查 MySQL 是否可以接受连接
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  mysqladmin ping -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD} 2>/dev/null
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # 存活探针：检查 MySQL 是否还在运行
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  mysqladmin ping -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD} 2>/dev/null
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            # MySQL 数据目录
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            # MySQL 配置文件
+            - name: mysql-config
+              mountPath: /etc/mysql/conf.d
+            # 初始化脚本
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: vocara-mysql-pvc
+        - name: mysql-config
+          configMap:
+            name: vocara-mysql-config
+            items:
+              - key: my.cnf
+                path: my.cnf
+        - name: initdb
+          configMap:
+            name: vocara-mysql-initdb

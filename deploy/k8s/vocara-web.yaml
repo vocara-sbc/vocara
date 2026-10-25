@@ -1,0 +1,128 @@
+# ============================================================
+# Vocara 呼叫中心系统 - vocara-web 管理后台前端入口
+# Nginx 统一入口：前端静态托管 + 五组反向代理（/api /callapi /agentapi /ws /sip-ws）
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-web
+  namespace: vocara
+  labels:
+    app: vocara-web
+    app.kubernetes.io/name: vocara-web
+    app.kubernetes.io/part-of: vocara
+spec:
+  # NodePort：经节点 IP 直连前端入口。
+  # 注意：K8s 默认 node-port 范围为 30000-32767，绑定 <30000 的端口需 apiserver
+  # 启动参数放行（--service-node-port-range）；若未放行，去掉 nodePort 字段
+  # 由集群自动分配，或改用 ingress.yaml（ClusterIP + 统一入口）。
+  # https 端口：WebRTC getUserMedia 要求安全上下文，经节点 IP 访问必须走 https
+  # 才不会在"接听"时被浏览器禁用麦克风，故同时暴露 443（TLS 由 nginx 终结）。
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+      nodePort: 28571
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+      nodePort: 30443
+  selector:
+    app: vocara-web
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-web
+  namespace: vocara
+  labels:
+    app: vocara-web
+    app.kubernetes.io/name: vocara-web
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-web
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-web
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      containers:
+        - name: vocara-web
+          image: registry.example.com/vocara/vocara-web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          env:
+            # FS 座席侧为 hostNetwork，直接经节点 IP 反代（不走 ClusterIP Service）
+            - name: VOCARA_SIP_ADDR
+              value: "192.168.100.11:5066"
+          # 上游地址默认取同名 Service（镜像内已设默认值，此处仅在需要覆盖时配置）：
+          # VOCARA_ADMIN_ADDR=vocara-admin:8080
+          # VOCARA_AGENTCENTER_ADDR=vocara-agentcenter:8081
+          # VOCARA_ACD_ADDR=vocara-acd:8082
+          # VOCARA_CALLCTRL_ADDR=vocara-callctrl:8083
+          # VOCARA_PUSH_ADDR=vocara-push:8084
+          # VOCARA_SIP_ADDR=vocara-fs-agent:5066
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          volumeMounts:
+            # TLS 证书（自签或正式证书），供 nginx 443 ssl 终结使用
+            - name: tls
+              mountPath: /etc/nginx/certs
+              readOnly: true
+
+      volumes:
+        - name: tls
+          secret:
+            secretName: vocara-web-tls

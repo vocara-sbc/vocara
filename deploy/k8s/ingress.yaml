@@ -1,0 +1,58 @@
+# ============================================================
+# Vocara 呼叫中心系统 - Ingress 入口
+# 使用 NGINX Ingress Controller，全部路径统一路由到 vocara-web，
+# 由 vocara-web 容器内 Nginx 完成静态托管与五组反向代理：
+#   /api /callapi /agentapi /ws /sip-ws
+# ============================================================
+# 前置条件：已安装 NGINX Ingress Controller
+# 安装参考：
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vocara-ingress
+  namespace: vocara
+  labels:
+    app: vocara
+    app.kubernetes.io/name: vocara-ingress
+    app.kubernetes.io/part-of: vocara
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+
+    # 客户端请求体大小限制（文件上传等）
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # 代理超时（普通 HTTP 请求即空闲超时；3600s 同时满足 /ws、/sip-ws 长连接周期）
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # WebSocket 服务
+    nginx.ingress.kubernetes.io/websocket-services: "vocara-web"
+
+    # 真实 IP 透传
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/forwarded-for-header: "X-Forwarded-For"
+
+spec:
+  # TLS 配置（生产环境必须启用 HTTPS）
+  # tls:
+  #   - hosts:
+  #       - vocara.example.com
+  #     secretName: vocara-tls-secret
+
+  rules:
+    # 替换为实际域名
+    - host: vocara.example.com
+      http:
+        paths:
+          # 全部路径交由 vocara-web 分发（静态页面、API、WebSocket、SIP WebSocket）
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vocara-web
+                port:
+                  number: 80

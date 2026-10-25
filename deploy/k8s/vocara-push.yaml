@@ -1,0 +1,142 @@
+# ============================================================
+# Vocara 呼叫中心系统 - vocara-push WebSocket 实时推送
+# 注意：WebSocket 服务建议 3 副本起步，保障高可用
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-push
+  namespace: vocara
+  labels:
+    app: vocara-push
+    app.kubernetes.io/name: vocara-push
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+      protocol: TCP
+  selector:
+    app: vocara-push
+  # WebSocket 会话保持（可选，若需要粘性会话请取消注释）
+  # sessionAffinity: ClientIP
+  # sessionAffinityConfig:
+  #   clientIP:
+  #     timeoutSeconds: 10800
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-push
+  namespace: vocara
+  labels:
+    app: vocara-push
+    app.kubernetes.io/name: vocara-push
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-push
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1  # WebSocket 长连接场景允许一定不可用
+  template:
+    metadata:
+      labels:
+        app: vocara-push
+      annotations:
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60  # WebSocket 服务需要更长时间优雅关闭
+
+      containers:
+        - name: vocara-push
+          image: registry.example.com/vocara/vocara-push:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8084
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # 配置文件路径：指向下方 ConfigMap 挂载的 config.yaml
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # 应用密钥：WebSocket 握手 JWT 验签与内部服务间 X-Internal-Token（五服务统一值）
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: 修改
+
+            # Redis 密码
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""
+
+            # NATS 密码
+            - name: VOCARA_NATS_PASSWORD
+              value: ""
+
+          resources:
+            # WebSocket 服务对内存和连接数要求较高
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8084
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8084
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 30"  # 较长时间等待 WebSocket 连接自然断开
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-push-config
+        

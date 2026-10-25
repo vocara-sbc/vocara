@@ -1,0 +1,185 @@
+# ============================================================
+# Vocara 呼叫中心系统 - vocara-admin 管理后台 API
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-admin
+  namespace: vocara
+  labels:
+    app: vocara-admin
+    app.kubernetes.io/name: vocara-admin
+    app.kubernetes.io/part-of: vocara
+spec:
+  # NodePort：hostNetwork 的 FS 节点无法解析集群 Service 名，
+  # 经本端口直达 admin（xml_curl 动态目录/拨号计划回调目标）
+  type: NodePort
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      nodePort: 30080
+  selector:
+    app: vocara-admin
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-admin
+  namespace: vocara
+  labels:
+    app: vocara-admin
+    app.kubernetes.io/name: vocara-admin
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-admin
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-admin
+      annotations:
+        # 配置变更时自动重启 Pod
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+      # 初始化等待依赖服务就绪（可选，按需启用）
+      # initContainers:
+      #   - name: wait-deps
+      #     image: busybox:1.36
+      #     command:
+      #       - sh
+      #       - -c
+      #       - |
+      #         echo "等待 MySQL 就绪..."
+      #         until nc -z vocara-mysql 3306; do sleep 2; done
+      #         echo "MySQL 就绪"
+      #         echo "等待 Redis 就绪..."
+      #         until nc -z vocara-redis 6379; do sleep 2; done
+      #         echo "Redis 就绪"
+      #         echo "等待 NATS 就绪..."
+      #         until nc -z vocara-nats 4222; do sleep 2; done
+      #         echo "NATS 就绪"
+
+      containers:
+        - name: vocara-admin
+          # 镜像仓库占位符，请替换为实际仓库地址
+          image: registry.example.com/vocara/vocara-admin:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # 时区
+            - name: TZ
+              value: "Asia/Shanghai"
+
+            # 配置文件路径：指向下方 ConfigMap 挂载的 config.yaml
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+
+            # 服务运行模式
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # 应用密钥：JWT 签名与内部服务间 X-Internal-Token（五服务统一值，建议使用 Secret）
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: 修改为强密钥
+
+            # 数据库密码（覆盖配置文件 mysql.password）
+            - name: VOCARA_MYSQL_PASSWORD
+              value: "vocara123"  # TODO: 修改为实际密码，建议使用 Secret
+            # 使用 Secret 的示例：
+            # - name: VOCARA_MYSQL_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: vocara-secrets
+            #       key: db-password
+
+            # Redis 密码
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""  # 无密码时留空
+
+            # NATS 密码
+            - name: VOCARA_NATS_PASSWORD
+              value: ""
+
+            # FreeSWITCH 节点地址（hostNetwork 无集群 Service，按实际节点 IP 配置）
+            - name: VOCARA_FS_DIALPLAN_SBC_PEER
+              value: "192.168.100.10:5061"  # FS-SBC 节点 internal-to-agent profile 入口
+            - name: VOCARA_FS_DIALPLAN_AGENT_EXTERNAL
+              value: "192.168.100.11:5080"  # FS-Agent 节点 external profile 入口
+            - name: VOCARA_FS_DIALPLAN_GATEWAY
+              value: "carrier"
+
+          # 资源请求和限制
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          # 就绪探针：服务是否准备好接受流量
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          # 存活探针：服务是否还在运行
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          # 优雅关闭钩子
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"  # 等待连接 draining 完成
+
+          volumeMounts:
+            # 挂载配置文件
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-admin-config
+        

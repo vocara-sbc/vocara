@@ -1,0 +1,204 @@
+# ============================================================
+# Vocara 呼叫中心系统 - NATS JetStream
+# 消息队列服务，开启 JetStream 持久化
+# ============================================================
+
+---
+# NATS 客户端服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-nats
+  namespace: vocara
+  labels:
+    app: vocara-nats
+    app.kubernetes.io/name: vocara-nats
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+      protocol: TCP
+    - name: monitor
+      port: 8222
+      targetPort: 8222
+      protocol: TCP
+  selector:
+    app: vocara-nats
+
+---
+# NATS 配置
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-nats-config
+  namespace: vocara
+  labels:
+    app: vocara-nats
+data:
+  nats.conf: |
+    # ==================================
+    # NATS 服务配置
+    # ==================================
+
+    # 监听地址
+    listen: 0.0.0.0:4222
+
+    # HTTP 监控端口
+    http: 0.0.0.0:8222
+
+    # 服务名称
+    server_name: vocara-nats
+
+    # 客户端连接配置
+    max_connections: 1000
+    max_payload: 10MB
+    max_control_line: 4096
+
+    # 认证（生产环境建议启用用户名密码，通过环境变量注入）
+    # authorization {
+    #   user: $NATS_USER
+    #   password: $NATS_PASSWORD
+    #   timeout: 5
+    # }
+
+    # 日志
+    debug: false
+    trace: false
+    logtime: true
+    # log_file: ""
+
+    # 集群配置（单节点模式，生产建议集群）
+    # cluster {
+    #   name: vocara-nats-cluster
+    #   listen: 0.0.0.0:6222
+    #   routes = [
+    #     nats-route://vocara-nats-0.vocara-nats:6222
+    #   ]
+    # }
+
+    # ==================================
+    # JetStream 持久化配置
+    # ==================================
+    jetstream {
+      # JetStream 数据存储目录
+      store_dir: /data/jetstream
+
+      # 内存存储限制
+      max_memory_store: 256MB
+
+      # 文件存储限制
+      max_file_store: 5GB
+    }
+
+---
+# NATS 持久化存储声明
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vocara-nats-pvc
+  namespace: vocara
+  labels:
+    app: vocara-nats
+    app.kubernetes.io/name: vocara-nats
+    app.kubernetes.io/part-of: vocara
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: ""  # 使用默认 StorageClass
+
+---
+# NATS StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vocara-nats
+  namespace: vocara
+  labels:
+    app: vocara-nats
+    app.kubernetes.io/name: vocara-nats
+    app.kubernetes.io/part-of: vocara
+spec:
+  serviceName: vocara-nats
+  replicas: 1  # 单节点 NATS，生产环境建议 3 节点集群
+  selector:
+    matchLabels:
+      app: vocara-nats
+  template:
+    metadata:
+      labels:
+        app: vocara-nats
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - /etc/nats/nats.conf
+          ports:
+            - name: client
+              containerPort: 4222
+              protocol: TCP
+            - name: monitor
+              containerPort: 8222
+              protocol: TCP
+            - name: cluster
+              containerPort: 6222
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # NATS 用户名密码（生产环境建议启用）
+            # - name: NATS_USER
+            #   value: "vocara"
+            # - name: NATS_PASSWORD
+            #   value: "your_password"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # 就绪探针：检查 NATS 是否可以接受连接
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # 存活探针
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 5
+          volumeMounts:
+            - name: nats-data
+              mountPath: /data
+            - name: nats-config
+              mountPath: /etc/nats
+      volumes:
+        - name: nats-data
+          persistentVolumeClaim:
+            claimName: vocara-nats-pvc
+        - name: nats-config
+          configMap:
+            name: vocara-nats-config
+            items:
+              - key: nats.conf
+                path: nats.conf
