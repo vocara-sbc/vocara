@@ -1,0 +1,71 @@
+# Multi-stage build for Vocara business services (shared by admin / agentcenter / acd / push)
+#
+# Each service is built independently and produces its own image. Build arguments:
+#   SERVICE: service name (e.g. admin), determines the binary name and container process
+#   PKG:     build entry package path (e.g. ./business/services/admin/cmd)
+#   VERSION / GIT_COMMIT / BUILD_TIME: version information injected into vocara/pkg/version
+#
+# The call control service vocara-callctrl uses deploy/docker/Dockerfile.callctrl (delivered as a prebuilt binary).
+#
+# Build example:
+#   docker build -f deploy/docker/Dockerfile.backend \
+#     --build-arg SERVICE=admin --build-arg PKG=./business/services/admin/cmd \
+#     -t registry.example.com/vocara/vocara-admin:1.0.0 .
+
+ARG GO_VERSION=1.22
+
+FROM golang:${GO_VERSION}-alpine AS build
+
+ARG SERVICE
+ARG PKG
+
+# Go module downloads in China
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn \
+    CGO_ENABLED=0
+
+WORKDIR /src
+
+RUN apk add --no-cache git
+
+# go.work workspace context: copy the workspace definition and all module source code first;
+# modules in the workspace are resolved through go.work, so a single service entry point is enough to compile.
+COPY go.work go.work.sum ./
+COPY pkg/ ./pkg/
+COPY contracts/ ./contracts/
+COPY business/ ./business/
+
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME
+
+# Build only the service entry point specified by the current build arguments
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go build -trimpath \
+      -ldflags "-s -w \
+        -X vocara/pkg/version.Version=${VERSION} \
+        -X vocara/pkg/version.BuildTime=${BUILD_TIME} \
+        -X vocara/pkg/version.GitCommit=${GIT_COMMIT}" \
+      -o /out/vocara-${SERVICE} ${PKG}
+
+# ---- Runtime stage ----
+FROM alpine:3.20
+
+ARG SERVICE
+
+RUN apk add --no-cache ca-certificates tzdata \
+    && adduser -D -u 10001 vocara \
+    && mkdir -p /app/logs /app/records \
+    && chown -R vocara:vocara /app
+
+COPY --from=build /out/vocara-${SERVICE} /app/vocara-${SERVICE}
+
+WORKDIR /app
+USER vocara:vocara
+
+ENV TZ=Asia/Shanghai \
+    SERVICE=${SERVICE}
+
+# The exec form does not expand ARG; use sh -c to start the process based on the SERVICE environment variable
+ENTRYPOINT ["sh", "-c", "exec /app/vocara-${SERVICE}"]

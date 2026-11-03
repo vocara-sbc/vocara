@@ -1,0 +1,130 @@
+# Vocara Call Control service configuration
+
+app:
+  name: vocara-callctrl
+  version: 1.0.0
+  env: dev # dev | test | prod
+  secret_key: vocara-dev-shared-secret-2026
+  timezone: Asia/Shanghai
+
+server:
+  host: 0.0.0.0
+  port: 8083
+  mode: debug # debug | release
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  max_request_body: 10485760
+  shutdown_timeout: 30
+
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: "vocara123"
+  database: vocara
+  charset: utf8mb4
+  collation: utf8mb4_unicode_ci
+  parse_time: true
+  loc: Local
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 60
+  conn_max_idle_time: 10
+  auto_migrate: false
+  slow_threshold: 1000
+  log_level: warn
+
+redis:
+  mode: single # single | cluster | sentinel
+  addrs: 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  master_name: ""
+  pool_size: 50
+  min_idle_conns: 10
+  max_retries: 3
+  dial_timeout: 5000
+  read_timeout: 3000
+  write_timeout: 3000
+  pool_timeout: 4000
+  idle_timeout: 300
+  idle_check_freq: 60
+
+nats:
+  urls: nats://127.0.0.1:4222
+  user: ""
+  password: ""
+  token: ""
+  reconnect_wait: 2
+  max_reconnect: -1
+  reconnect_buf: 8388608
+  timeout: 5
+  flush_timeout: 5
+  cluster_id: vocara
+  client_id: callctrl-service
+
+# ESL configuration
+esl:
+  host: 127.0.0.1
+  port: 8021
+  password: ClueCon
+  timeout: 10
+  reconnect: true
+  reconnect_wait: 5
+  max_reconnect: -1
+  event_filter: ""
+  buffer_size: 1000
+
+# Call control specific configuration
+callctrl:
+  # FS instance identifier
+  fs_instance: fs-agent-01
+  # ACD service address (inbound queueing)
+  acd_base_url: "http://127.0.0.1:8082"
+  # Agent center address (releases the agent back to ready when ringing fails; internal API auth uses app.secret_key)
+  agentcenter_base_url: "http://127.0.0.1:8081"
+  # Admin service address (pulls inbound DID routes dynamically, primary data source; falls back to the static inbound_routes below when unreachable)
+  admin_base_url: "http://127.0.0.1:8080"
+  # Inbound route cache refresh interval (seconds)
+  route_refresh_interval: 60
+  # Inbound access number -> queue route (static fallback used when admin is unreachable; normally delivered dynamically by admin inbound reception)
+  # did: the number the customer dials; queue_id/skill_group_id map to the queue and skill group
+  inbound_routes:
+    - { did: "6000", queue_id: 1, skill_group_id: 1 }
+  # Default outbound gateway
+  default_gateway: default
+  # Default recording directory
+  record_dir: /data/records
+  # Default recording format
+  record_format: wav
+  # Max call duration (seconds); 0 is unlimited
+  max_call_duration: 0
+  # Default outbound timeout (seconds)
+  default_originate_timeout: 30
+  # Number of event-processing workers
+  event_worker_num: 4
+  # Event buffer size
+  event_buffer_size: 1000
+  # Call event NATS topic
+  call_event_nats_topic: vocara.call.event
+
+# Logging configuration
+log:
+  level: info     # debug | info | warn | error
+  format: json    # json | console
+  output: "file"   # stdout | file | both - write to file only, to avoid duplicate logs from run.cmd stdout redirection
+  file_path: ./logs/callctrl.log
+  max_size: 100   # MB
+  max_age: 30     # days
+  max_backups: 10
+  compress: true
+  caller: true
+  caller_skip: 1
+
+# License authorization: offline vocara.lic, verified locally with a public key embedded in the process
+license:
+  file: ./license/vocara.lic   # License file path
+  check_interval: 3600         # Runtime re-verification interval (seconds)
+  fail_open: false             # Lets business proceed when signature verification or fingerprint checks fail; for temporary troubleshooting only

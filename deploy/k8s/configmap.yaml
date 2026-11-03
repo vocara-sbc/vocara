@@ -1,0 +1,522 @@
+# ============================================================
+# Vocara Call Center System - Runtime Configuration ConfigMap
+# Each microservice has its own ConfigMap, with the config.yaml key mounted as the configuration file in the container.
+# Sensitive items (secret keys and passwords) are left blank here and injected by the Deployment as
+# environment variables with the VOCARA_ prefix. pkg/config uses viper AutomaticEnv to recognize the prefix and override matching keys.
+# For example, VOCARA_MYSQL_PASSWORD overrides mysql.password.
+# The dual FreeSWITCH nodes run with hostNetwork and have no cluster Service; their node addresses
+# are also injected via environment variables (VOCARA_ESL_HOST, VOCARA_FS_DIALPLAN_*).
+# FreeSWITCH reads environment variables through env-set preprocessor directives in conf/vars.xml:
+# VOCARA_FS_AGENT_DOMAIN / VOCARA_FS_SBC_DOMAIN (SIP domains for the two nodes).
+# When not injected, they fall back to the default in vars.xml (127.0.0.1).
+#
+# redis.db is consistently set to 0: cross-service shared keys such as license and install_id are distributed through Redis.
+# All services must read from the same db; otherwise, reading the wrong db causes a fallback to local files and authorization failure.
+# ============================================================
+
+---
+# vocara-admin admin API configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-admin-config
+  namespace: vocara
+  labels:
+    app: vocara-admin
+    app.kubernetes.io/name: vocara-admin
+    app.kubernetes.io/part-of: vocara
+data:
+  config.yaml: |
+    app:
+      name: vocara-admin
+      version: 1.0.0
+      env: prod
+      secret_key: ""            # VOCARA_APP_SECRET_KEY: JWT signing and internal inter-service tokens
+      timezone: Asia/Shanghai
+
+    server:
+      host: 0.0.0.0
+      port: 8080
+      mode: release             # debug / release; can be overridden by VOCARA_SERVER_MODE
+      read_timeout: 30
+      write_timeout: 30
+      idle_timeout: 60
+      max_request_body: 10485760
+      shutdown_timeout: 30
+
+    mysql:
+      host: vocara-mysql
+      port: 3306
+      user: root
+      password: ""              # VOCARA_MYSQL_PASSWORD
+      database: vocara
+      charset: utf8mb4
+      collation: utf8mb4_unicode_ci
+      parse_time: true
+      loc: Local
+      max_idle_conns: 10
+      max_open_conns: 100
+      conn_max_lifetime: 60
+      conn_max_idle_time: 10
+      auto_migrate: true
+      slow_threshold: 1000
+      log_level: warn
+
+    redis:
+      mode: single
+      addrs: vocara-redis:6379
+      username: ""
+      password: ""              # VOCARA_REDIS_PASSWORD
+      db: 0
+      master_name: ""
+      pool_size: 50
+      min_idle_conns: 10
+      max_retries: 3
+      dial_timeout: 5000
+      read_timeout: 3000
+      write_timeout: 3000
+      pool_timeout: 4000
+      idle_timeout: 300
+      idle_check_freq: 60
+
+    nats:
+      urls: nats://vocara-nats:4222
+      user: ""
+      password: ""              # VOCARA_NATS_PASSWORD
+      token: ""
+      reconnect_wait: 2
+      max_reconnect: -1
+      reconnect_buf: 8388608
+      timeout: 5
+      flush_timeout: 5
+      cluster_id: vocara
+      client_id: admin-service
+
+    log:
+      level: info
+      format: json
+      output: stdout            # stdout / file / both
+      file_path: ./logs/admin.log
+      max_size: 100
+      max_age: 30
+      max_backups: 10
+      compress: true
+      caller: true
+      caller_skip: 1
+
+    license:
+      file: ./license/vocara.lic
+      check_interval: 3600
+      fail_open: false
+
+    # FreeSWITCH dialplan is delivered dynamically: rule content is pulled in real time via mod_xml_curl.
+    # This section only configures environment-specific node addresses and the outbound gateway name
+    fs_dialplan:
+      sbc_peer: ""              # VOCARA_FS_DIALPLAN_SBC_PEER: host:port
+      agent_external: ""        # VOCARA_FS_DIALPLAN_AGENT_EXTERNAL: host:port
+      gateway: carrier          # VOCARA_FS_DIALPLAN_GATEWAY: carrier gateway name
+
+---
+# vocara-agentcenter agent center configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-agentcenter-config
+  namespace: vocara
+  labels:
+    app: vocara-agentcenter
+    app.kubernetes.io/name: vocara-agentcenter
+    app.kubernetes.io/part-of: vocara
+data:
+  config.yaml: |
+    app:
+      name: agent-center
+      version: 1.0.0
+      env: prod
+      secret_key: ""            # VOCARA_APP_SECRET_KEY
+      timezone: Asia/Shanghai
+
+    server:
+      host: 0.0.0.0
+      port: 8081
+      mode: release
+      read_timeout: 30
+      write_timeout: 30
+      idle_timeout: 60
+      max_request_body: 10485760
+      shutdown_timeout: 30
+
+    mysql:
+      host: vocara-mysql
+      port: 3306
+      user: root
+      password: ""              # VOCARA_MYSQL_PASSWORD
+      database: vocara
+      charset: utf8mb4
+      collation: utf8mb4_unicode_ci
+      parse_time: true
+      loc: Local
+      max_idle_conns: 20
+      max_open_conns: 100
+      conn_max_lifetime: 60
+      conn_max_idle_time: 10
+      auto_migrate: false
+      slow_threshold: 1000
+      log_level: warn
+
+    redis:
+      mode: single
+      addrs: vocara-redis:6379
+      username: ""
+      password: ""              # VOCARA_REDIS_PASSWORD
+      db: 0
+      master_name: ""
+      pool_size: 100
+      min_idle_conns: 10
+      max_retries: 3
+      dial_timeout: 5000
+      read_timeout: 3000
+      write_timeout: 3000
+      pool_timeout: 4000
+      idle_timeout: 300
+      idle_check_freq: 60
+
+    nats:
+      urls: nats://vocara-nats:4222
+      user: ""
+      password: ""              # VOCARA_NATS_PASSWORD
+      token: ""
+      reconnect_wait: 2
+      max_reconnect: -1
+      reconnect_buf: 8388608
+      timeout: 5
+      flush_timeout: 5
+      cluster_id: vocara
+      client_id: agent-center
+
+    log:
+      level: info
+      format: json
+      output: stdout
+      file_path: ./logs/agent-center.log
+      max_size: 100
+      max_age: 30
+      max_backups: 10
+      compress: true
+      caller: true
+      caller_skip: 1
+
+    license:
+      file: ./license/vocara.lic
+      check_interval: 3600
+      fail_open: false
+
+---
+# vocara-acd intelligent queueing configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-acd-config
+  namespace: vocara
+  labels:
+    app: vocara-acd
+    app.kubernetes.io/name: vocara-acd
+    app.kubernetes.io/part-of: vocara
+data:
+  config.yaml: |
+    app:
+      name: vocara-acd
+      version: 1.0.0
+      env: prod
+      secret_key: ""            # VOCARA_APP_SECRET_KEY
+      timezone: Asia/Shanghai
+
+    server:
+      host: 0.0.0.0
+      port: 8082
+      mode: release
+      read_timeout: 10
+      write_timeout: 10
+      idle_timeout: 60
+      max_request_body: 10485760
+      shutdown_timeout: 30
+
+    mysql:
+      host: vocara-mysql
+      port: 3306
+      user: root
+      password: ""              # VOCARA_MYSQL_PASSWORD
+      database: vocara
+      charset: utf8mb4
+      collation: utf8mb4_unicode_ci
+      parse_time: true
+      loc: Local
+      max_idle_conns: 10
+      max_open_conns: 100
+      conn_max_lifetime: 60
+      conn_max_idle_time: 10
+      auto_migrate: false
+      slow_threshold: 1000
+      log_level: warn
+
+    redis:
+      mode: single
+      addrs: vocara-redis:6379
+      username: ""
+      password: ""              # VOCARA_REDIS_PASSWORD
+      db: 0
+      master_name: ""
+      pool_size: 50
+      min_idle_conns: 10
+      max_retries: 3
+      dial_timeout: 5000
+      read_timeout: 3000
+      write_timeout: 3000
+      pool_timeout: 4000
+      idle_timeout: 300
+      idle_check_freq: 60
+
+    nats:
+      urls: nats://vocara-nats:4222
+      user: ""
+      password: ""              # VOCARA_NATS_PASSWORD
+      token: ""
+      reconnect_wait: 2
+      max_reconnect: -1
+      reconnect_buf: 8388608
+      timeout: 5
+      flush_timeout: 5
+      cluster_id: vocara
+      client_id: acd-service
+
+    acd:
+      max_queue_len: 100        # Max queue length per queue; 0 means unlimited
+      max_priority: 3           # Priority ceiling (low 1 / normal 2 / vip 3)
+      priority_aging_cycle: 60  # Priority aging period in seconds; 0 disables aging
+      max_wait_time: 600        # Max wait time in seconds; 0 means unlimited
+      schedule_interval: 5      # Scheduled fallback scan interval in seconds
+      lock_timeout: 10          # Queue-level distributed lock timeout in seconds
+      allocate_max_retries: 3   # Max allocation retries per scheduling run
+      agent_center_addr: http://vocara-agentcenter:8081
+      agent_center_token: ""    # VOCARA_ACD_AGENT_CENTER_TOKEN: must match the agent center app.secret_key
+      use_mock_agent_client: false
+
+    log:
+      level: info
+      format: json
+      output: stdout
+      file_path: ./logs/acd.log
+      max_size: 100
+      max_age: 30
+      max_backups: 10
+      compress: true
+      caller: true
+      caller_skip: 1
+
+    license:
+      file: ./license/vocara.lic
+      check_interval: 3600
+      fail_open: false
+
+---
+# vocara-callctrl call control configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-callctrl-config
+  namespace: vocara
+  labels:
+    app: vocara-callctrl
+    app.kubernetes.io/name: vocara-callctrl
+    app.kubernetes.io/part-of: vocara
+data:
+  config.yaml: |
+    app:
+      name: vocara-callctrl
+      version: 1.0.0
+      env: prod
+      secret_key: ""            # VOCARA_APP_SECRET_KEY
+      timezone: Asia/Shanghai
+
+    server:
+      host: 0.0.0.0
+      port: 8083
+      mode: release
+      read_timeout: 30
+      write_timeout: 30
+      idle_timeout: 60
+      max_request_body: 10485760
+      shutdown_timeout: 30
+
+    mysql:
+      host: vocara-mysql
+      port: 3306
+      user: root
+      password: ""              # VOCARA_MYSQL_PASSWORD
+      database: vocara
+      charset: utf8mb4
+      collation: utf8mb4_unicode_ci
+      parse_time: true
+      loc: Local
+      max_idle_conns: 10
+      max_open_conns: 100
+      conn_max_lifetime: 60
+      conn_max_idle_time: 10
+      auto_migrate: true      # GORM auto-creates the cdr_calls technical detail table from model.CDR
+      slow_threshold: 1000
+      log_level: warn
+
+    redis:
+      mode: single
+      addrs: vocara-redis:6379
+      username: ""
+      password: ""              # VOCARA_REDIS_PASSWORD
+      db: 0
+      master_name: ""
+      pool_size: 50
+      min_idle_conns: 10
+      max_retries: 3
+      dial_timeout: 5000
+      read_timeout: 3000
+      write_timeout: 3000
+      pool_timeout: 4000
+      idle_timeout: 300
+      idle_check_freq: 60
+
+    nats:
+      urls: nats://vocara-nats:4222
+      user: ""
+      password: ""              # VOCARA_NATS_PASSWORD
+      token: ""
+      reconnect_wait: 2
+      max_reconnect: -1
+      reconnect_buf: 8388608
+      timeout: 5
+      flush_timeout: 5
+      cluster_id: vocara
+      client_id: callctrl-service
+
+    esl:
+      host: ""                  # VOCARA_ESL_HOST: agent-side media node IP (hostNetwork, no cluster Service)
+      port: 8021
+      password: ""              # VOCARA_ESL_PASSWORD
+      timeout: 10
+      reconnect: true
+      reconnect_wait: 5
+      max_reconnect: -1
+      event_filter: ""
+      buffer_size: 1000
+
+    callctrl:
+      fs_instance: fs-agent-01
+      acd_base_url: http://vocara-acd:8082
+      agentcenter_base_url: http://vocara-agentcenter:8081
+      admin_base_url: http://vocara-admin:8080
+      route_refresh_interval: 60
+      inbound_routes:
+        - { did: "6000", queue_id: 1, skill_group_id: 1 }
+      default_gateway: default
+      record_dir: /data/records
+      record_format: wav
+      max_call_duration: 0
+      default_originate_timeout: 30
+      event_worker_num: 4
+      event_buffer_size: 1000
+      call_event_nats_topic: vocara.call.event
+
+    log:
+      level: info
+      format: json
+      output: stdout
+      file_path: ./logs/callctrl.log
+      max_size: 100
+      max_age: 30
+      max_backups: 10
+      compress: true
+      caller: true
+      caller_skip: 1
+
+    license:
+      file: ./license/vocara.lic
+      check_interval: 3600
+      fail_open: false
+
+---
+# vocara-push WebSocket real-time push configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-push-config
+  namespace: vocara
+  labels:
+    app: vocara-push
+    app.kubernetes.io/name: vocara-push
+    app.kubernetes.io/part-of: vocara
+data:
+  config.yaml: |
+    app:
+      name: vocara-push
+      version: 1.0.0
+      env: prod
+      secret_key: ""            # VOCARA_APP_SECRET_KEY: JWT verification for WebSocket handshakes and internal tokens
+      timezone: Asia/Shanghai
+
+    server:
+      host: 0.0.0.0
+      port: 8084
+      mode: release
+      read_timeout: 30
+      write_timeout: 30
+      idle_timeout: 60
+      max_request_body: 10485760
+      shutdown_timeout: 30
+
+    redis:
+      mode: single
+      addrs: vocara-redis:6379
+      username: ""
+      password: ""              # VOCARA_REDIS_PASSWORD
+      db: 0
+      master_name: ""
+      pool_size: 50
+      min_idle_conns: 10
+      max_retries: 3
+      dial_timeout: 5000
+      read_timeout: 3000
+      write_timeout: 3000
+      pool_timeout: 4000
+      idle_timeout: 300
+      idle_check_freq: 60
+
+    nats:
+      urls: nats://vocara-nats:4222
+      user: ""
+      password: ""              # VOCARA_NATS_PASSWORD
+      token: ""
+      reconnect_wait: 2
+      max_reconnect: -1
+      reconnect_buf: 8388608
+      timeout: 5
+      flush_timeout: 5
+      cluster_id: vocara
+      client_id: push-service
+
+    log:
+      level: info
+      format: json
+      output: stdout
+      file_path: ./logs/push.log
+      max_size: 100
+      max_age: 30
+      max_backups: 10
+      compress: true
+      caller: true
+      caller_skip: 1
+
+    push:
+      agentcenter_base_url: http://vocara-agentcenter:8081
+
+    license:
+      file: ./license/vocara.lic
+      check_interval: 3600
+      fail_open: false

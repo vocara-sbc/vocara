@@ -1,0 +1,91 @@
+# ========== 应用配置 ==========
+app:
+  name: "agent-center"
+  version: "1.0.0"
+  env: "dev"
+  secret_key: vocara-dev-shared-secret-2026
+  timezone: "Asia/Shanghai"
+
+# ========== 服务配置 ==========
+server:
+  host: "0.0.0.0"
+  port: 8081
+  mode: "debug"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  max_request_body: 10485760
+  shutdown_timeout: 30
+
+# ========== MySQL 配置 ==========
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "vocara123"
+  database: "vocara"
+  charset: "utf8mb4"
+  collation: "utf8mb4_unicode_ci"
+  parse_time: true
+  loc: "Local"
+  max_idle_conns: 20
+  max_open_conns: 100
+  conn_max_lifetime: 60
+  conn_max_idle_time: 10
+  auto_migrate: false
+  slow_threshold: 1000
+  log_level: "warn"
+
+# ========== Redis 配置 ==========
+redis:
+  mode: "single"
+  addrs: "127.0.0.1:6379"
+  username: ""
+  password: ""
+  db: 0
+  pool_size: 100
+  min_idle_conns: 10
+  max_retries: 3
+  dial_timeout: 5000
+  read_timeout: 3000
+  write_timeout: 3000
+  pool_timeout: 4000
+  idle_timeout: 300
+  idle_check_freq: 60
+
+# ========== 日志配置 ==========
+log:
+  level: "info"
+  format: "json"
+  output: "file"   # stdout | file | both——仅写文件，避免与 run.cmd stdout 重定向产生重复日志
+  file_path: "./logs/agent-center.log"
+  max_size: 100
+  max_age: 30
+  max_backups: 10
+  compress: true
+  caller: true
+  caller_skip: 1
+
+# ========== NATS 配置（可选） ==========
+nats:
+  urls: "nats://127.0.0.1:4222"
+  user: ""
+  password: ""
+  token: ""
+  cluster_id: "vocara"
+  client_id: "agent-center"
+
+# ========== 座席服务自定义配置 ==========
+# 注：这些配置项通过代码读取，不属于 config.Config 结构体
+# 可以在代码中通过 viper 直接读取
+# agent:
+#   session_ttl: 120       # 会话过期时间（秒）
+#   heartbeat_interval: 30 # 心跳间隔（秒）
+#   scan_interval: 30000   # 过期会话扫描间隔（毫秒）
+
+# ========== License 授权 ==========
+# 离线 vocara.lic，进程内置公钥本地验签
+license:
+  file: ./license/vocara.lic   # License 文件路径
+  check_interval: 3600         # 运行期复校间隔（秒）
+  fail_open: false             # 验签或指纹异常时放行业务，仅排障临时使用

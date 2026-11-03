@@ -1,0 +1,119 @@
+
+# FreeSWITCH agent-side deployment (configuration mounted via hostPath)
+# The agent side handles agent extension registration, agent-side media processing, and agent-side bridging
+# FreeSWITCH uses hostNetwork because RTP requires a large port range.
+#
+# Usage:
+#   1. Prepare the hostPath directories on the target node:
+#      mkdir -p /data/vocara/freeswitch/fs-agent/conf
+#               /data/vocara/freeswitch/fs-agent/recordings
+#               /data/vocara/freeswitch/fs-agent/log
+#               /data/vocara/freeswitch/fs-agent/certs
+#   2. Copy the fs-agent conf configuration from the freeswitch/ directory in the core repository to the node:
+#      cp -r fs-agent/conf/* /data/vocara/freeswitch/fs-agent/conf/
+#      Generate WebRTC certificates by running gen-certs.sh in the certs directory.
+#   3. Replace the image tag with your private registry (registry.example.com/vocara/ is a placeholder).
+#   4. kubectl apply -f deploy/k8s/freeswitch-agent.yaml
+#
+# The default FreeSWITCH CMD daemonizes the process and causes the container to exit.
+# Run it in the foreground with -nf; -nonat disables Auto-NAT (direct internal networking with hostNetwork).
+
+---
+# Service: exposes the WebRTC WebSocket port for the /sip-ws reverse proxy in vocara-web.
+# The endpoint of a hostNetwork Pod is the node IP, and kube-proxy forwards the TCP port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-fs-agent
+  namespace: vocara
+  labels:
+    app: vocara-fs-agent
+    role: agent
+spec:
+  type: ClusterIP
+  ports:
+    - name: sip-ws
+      port: 5066
+      targetPort: 5066
+      protocol: TCP
+  selector:
+    app: vocara-fs-agent
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: vocara-fs-agent
+  namespace: vocara
+  labels:
+    app: vocara-fs-agent
+    role: agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-fs-agent
+  template:
+    metadata:
+      labels:
+        app: vocara-fs-agent
+        role: agent
+    spec:
+      enableServiceLinks: false
+      volumes:
+        - name: fs-conf
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/conf
+            type: DirectoryOrCreate
+        - name: fs-records
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/recordings
+            type: DirectoryOrCreate
+        - name: fs-log
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/log
+            type: DirectoryOrCreate
+        - name: fs-certs
+          hostPath:
+            path: /data/vocara/freeswitch/fs-agent/certs
+            type: DirectoryOrCreate
+        - name: localtime
+          hostPath:
+            path: /etc/localtime
+            type: File
+      containers:
+        - name: freeswitch
+          image: registry.example.com/vocara/freeswitch:1.10.10
+          command:
+            - /usr/local/freeswitch/bin/freeswitch
+          args:
+            - -nf
+            - -nonat
+          env:
+            # Agent-side node SIP domain (extension/WebRTC registration address); points to the actual node IP in the integration environment
+            - name: VOCARA_FS_AGENT_DOMAIN
+              value: "192.168.100.11"
+            # Admin service address (xml_curl dynamic directory/dialplan callback target);
+            # hostNetwork cannot resolve cluster Service names, so connect directly through the admin NodePort
+            - name: VOCARA_ADMIN_ADDR
+              value: "192.168.100.10:30080"
+            # xml_curl callback authentication token; must match the admin VOCARA_APP_SECRET_KEY
+            - name: VOCARA_FS_ADMIN_TOKEN
+              value: "change-me-to-a-strong-secret-key"
+          volumeMounts:
+            - name: fs-conf
+              mountPath: /usr/local/freeswitch/conf
+            - name: fs-records
+              mountPath: /usr/local/freeswitch/recordings
+            - name: fs-log
+              mountPath: /usr/local/freeswitch/log
+            - name: fs-certs
+              mountPath: /usr/local/freeswitch/certs
+            - name: localtime
+              mountPath: /etc/localtime
+              readOnly: true
+          securityContext:
+            # SCHED_FIFO real-time scheduling requires privileges
+            privileged: true
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: node1

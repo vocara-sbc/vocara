@@ -1,0 +1,38 @@
+# Vocara admin frontend image: Node build -> Nginx runtime (unified entry: static hosting + five reverse proxy groups)
+#
+# Build example:
+#   docker build -f deploy/docker/Dockerfile.web \
+#     -t registry.example.com/vocara/vocara-web:1.0.0 .
+
+# ---- Build stage ----
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY business/web/admin/package.json business/web/admin/package-lock.json ./
+RUN npm config set registry https://registry.npmmirror.com \
+    && npm ci
+
+# The phone bar (obfuscated build output) and dynamic form SDK are in public/ and are copied with the source code
+COPY business/web/admin/ ./
+RUN npm run build
+
+# ---- Runtime stage ----
+FROM nginx:1.27-alpine
+
+# Default upstream service addresses (same-named Services in K8s).
+# Override them at deployment with environment variables of the same names; NGINX_ENVSUBST_FILTER limits rendering to variables with the VOCARA_ prefix,
+# and Nginx's own variables such as $http_upgrade are not substituted.
+ENV VOCARA_ADMIN_ADDR=vocara-admin:8080 \
+    VOCARA_AGENTCENTER_ADDR=vocara-agentcenter:8081 \
+    VOCARA_ACD_ADDR=vocara-acd:8082 \
+    VOCARA_CALLCTRL_ADDR=vocara-callctrl:8083 \
+    VOCARA_PUSH_ADDR=vocara-push:8084 \
+    VOCARA_SIP_ADDR=vocara-fs-agent:5066 \
+    VOCARA_WEB_ROOT=/usr/share/nginx/html \
+    NGINX_ENVSUBST_FILTER=VOCARA_
+
+COPY deploy/docker/nginx/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80 443

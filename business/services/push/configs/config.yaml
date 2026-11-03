@@ -1,0 +1,71 @@
+# Vocara 推送服务配置
+# Push Service Configuration
+
+app:
+  name: vocara-push
+  version: 1.0.0
+  env: dev
+  secret_key: "vocara-dev-shared-secret-2026"
+  timezone: Asia/Shanghai
+
+server:
+  host: 0.0.0.0
+  port: 8084
+  mode: debug
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  max_request_body: 10485760
+  shutdown_timeout: 30
+
+redis:
+  mode: single
+  addrs: "127.0.0.1:6379"
+  username: ""
+  password: ""
+  db: 0
+  pool_size: 50
+  min_idle_conns: 10
+  max_retries: 3
+  dial_timeout: 5000
+  read_timeout: 3000
+  write_timeout: 3000
+  pool_timeout: 4000
+  idle_timeout: 300
+  idle_check_freq: 60
+
+nats:
+  urls: "nats://127.0.0.1:4222"
+  user: ""
+  password: ""
+  token: ""
+  reconnect_wait: 2
+  max_reconnect: -1
+  reconnect_buf: 8388608
+  timeout: 5
+  flush_timeout: 5
+  cluster_id: vocara
+  client_id: push-service
+
+log:
+  level: info
+  format: json     # json | console——统一 json，与其他服务保持一致
+  output: "file"   # stdout | file | both——仅写文件，避免与 run.cmd stdout 重定向产生重复日志
+  file_path: ./logs/push.log
+  max_size: 100
+  max_age: 30
+  max_backups: 10
+  compress: true
+  caller: true
+  caller_skip: 1
+
+# push 服务专属配置
+push:
+  # 座席中心地址（座席命令网关；内部接口鉴权用 app.secret_key）
+  agentcenter_base_url: "http://127.0.0.1:8081"
+
+# License 授权：离线 vocara.lic，进程内置公钥本地验签
+license:
+  file: ./license/vocara.lic   # License 文件路径
+  check_interval: 3600         # 运行期复校间隔（秒）
+  fail_open: false             # 验签或指纹异常时放行业务，仅排障临时使用

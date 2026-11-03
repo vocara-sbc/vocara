@@ -1,0 +1,204 @@
+# ============================================================
+# Vocara Call Center System - NATS JetStream
+# Messaging service with JetStream persistence enabled
+# ============================================================
+
+---
+# NATS client Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-nats
+  namespace: vocara
+  labels:
+    app: vocara-nats
+    app.kubernetes.io/name: vocara-nats
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+      protocol: TCP
+    - name: monitor
+      port: 8222
+      targetPort: 8222
+      protocol: TCP
+  selector:
+    app: vocara-nats
+
+---
+# NATS configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-nats-config
+  namespace: vocara
+  labels:
+    app: vocara-nats
+data:
+  nats.conf: |
+    # ==================================
+    # NATS server configuration
+    # ==================================
+
+    # Listen address
+    listen: 0.0.0.0:4222
+
+    # HTTP monitoring port
+    http: 0.0.0.0:8222
+
+    # Server name
+    server_name: vocara-nats
+
+    # Client connection settings
+    max_connections: 1000
+    max_payload: 10MB
+    max_control_line: 4096
+
+    # Authentication (username/password recommended in production; inject via environment variables)
+    # authorization {
+    #   user: $NATS_USER
+    #   password: $NATS_PASSWORD
+    #   timeout: 5
+    # }
+
+    # Logging
+    debug: false
+    trace: false
+    logtime: true
+    # log_file: ""
+
+    # Cluster configuration (single-node mode; a cluster is recommended for production)
+    # cluster {
+    #   name: vocara-nats-cluster
+    #   listen: 0.0.0.0:6222
+    #   routes = [
+    #     nats-route://vocara-nats-0.vocara-nats:6222
+    #   ]
+    # }
+
+    # ==================================
+    # JetStream persistence configuration
+    # ==================================
+    jetstream {
+      # JetStream data storage directory
+      store_dir: /data/jetstream
+
+      # Memory storage limit
+      max_memory_store: 256MB
+
+      # File storage limit
+      max_file_store: 5GB
+    }
+
+---
+# NATS PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vocara-nats-pvc
+  namespace: vocara
+  labels:
+    app: vocara-nats
+    app.kubernetes.io/name: vocara-nats
+    app.kubernetes.io/part-of: vocara
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: ""  # Uses the default StorageClass
+
+---
+# NATS StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vocara-nats
+  namespace: vocara
+  labels:
+    app: vocara-nats
+    app.kubernetes.io/name: vocara-nats
+    app.kubernetes.io/part-of: vocara
+spec:
+  serviceName: vocara-nats
+  replicas: 1  # Single-node NATS; a three-node cluster is recommended for production
+  selector:
+    matchLabels:
+      app: vocara-nats
+  template:
+    metadata:
+      labels:
+        app: vocara-nats
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - -c
+            - /etc/nats/nats.conf
+          ports:
+            - name: client
+              containerPort: 4222
+              protocol: TCP
+            - name: monitor
+              containerPort: 8222
+              protocol: TCP
+            - name: cluster
+              containerPort: 6222
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # NATS username and password (recommended in production)
+            # - name: NATS_USER
+            #   value: "vocara"
+            # - name: NATS_PASSWORD
+            #   value: "your_password"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Readiness probe: checks whether NATS can accept connections
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 5
+          volumeMounts:
+            - name: nats-data
+              mountPath: /data
+            - name: nats-config
+              mountPath: /etc/nats
+      volumes:
+        - name: nats-data
+          persistentVolumeClaim:
+            claimName: vocara-nats-pvc
+        - name: nats-config
+          configMap:
+            name: vocara-nats-config
+            items:
+              - key: nats.conf
+                path: nats.conf

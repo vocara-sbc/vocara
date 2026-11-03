@@ -1,0 +1,222 @@
+# ============================================================
+# Vocara Call Center System - MySQL 8.0
+# Stateful service using a StatefulSet and PVC for persistence
+# ============================================================
+
+---
+# MySQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-mysql
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+    app.kubernetes.io/name: vocara-mysql
+    app.kubernetes.io/part-of: vocara
+spec:
+  # NodePort: allows direct access from the local host or development machine to inspect data
+  type: NodePort
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      protocol: TCP
+      nodePort: 3306
+  selector:
+    app: vocara-mysql
+
+---
+# MySQL configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-mysql-config
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+data:
+  my.cnf: |
+    [mysqld]
+    # Basic settings
+    datadir=/var/lib/mysql
+    socket=/var/run/mysqld/mysqld.sock
+    pid-file=/var/run/mysqld/mysqld.pid
+
+    # Charset
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+    init-connect='SET NAMES utf8mb4'
+
+    # Connection settings
+    max_connections=500
+    max_connect_errors=1000
+    wait_timeout=28800
+    interactive_timeout=28800
+
+    # Buffer pool settings (adjust based on available memory)
+    innodb_buffer_pool_size=512M
+    innodb_log_file_size=128M
+    innodb_log_buffer_size=16M
+    innodb_flush_log_at_trx_commit=1
+    innodb_file_per_table=1
+    innodb_flush_method=O_DIRECT
+
+    # Slow query log
+    slow_query_log=1
+    slow_query_log_file=/var/lib/mysql/slow.log
+    long_query_time=2
+
+    # Other settings
+    skip-name-resolve
+    default-time-zone='+08:00'
+
+    [client]
+    default-character-set=utf8mb4
+
+    [mysql]
+    default-character-set=utf8mb4
+
+---
+# MySQL initialization script ConfigMap
+# Mounts SQL files from db/migrations/ into /docker-entrypoint-initdb.d/
+# MySQL automatically executes .sql and .sh files in this directory on first boot
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-mysql-initdb
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+data:
+  01-init-database.sql: |
+    -- Create the vocara database
+    CREATE DATABASE IF NOT EXISTS vocara
+      DEFAULT CHARACTER SET utf8mb4
+      DEFAULT COLLATE utf8mb4_unicode_ci;
+
+    -- Note: In production, create a dedicated database user instead of using root
+    -- GRANT ALL PRIVILEGES ON vocara.* TO 'vocara'@'%' IDENTIFIED BY 'your_password';
+    -- FLUSH PRIVILEGES;
+
+---
+# MySQL PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vocara-mysql-pvc
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+    app.kubernetes.io/name: vocara-mysql
+    app.kubernetes.io/part-of: vocara
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: ""  # Uses the default StorageClass; uncomment to specify one
+
+---
+# MySQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vocara-mysql
+  namespace: vocara
+  labels:
+    app: vocara-mysql
+    app.kubernetes.io/name: vocara-mysql
+    app.kubernetes.io/part-of: vocara
+spec:
+  serviceName: vocara-mysql
+  replicas: 1  # Single-instance MySQL; use primary/replica replication or a cloud database in production
+  selector:
+    matchLabels:
+      app: vocara-mysql
+  template:
+    metadata:
+      labels:
+        app: vocara-mysql
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60  # MySQL needs more time to shut down gracefully
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          env:
+            # MySQL root password (use a strong password or a Secret in production)
+            - name: MYSQL_ROOT_PASSWORD
+              value: "vocara123"  # TODO: Change to a strong password
+            # Alternatively, reference a Secret:
+            # - name: MYSQL_ROOT_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: vocara-secrets
+            #       key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: "vocara"
+            - name: TZ
+              value: "Asia/Shanghai"
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          # Readiness probe: checks whether MySQL can accept connections
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  mysqladmin ping -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD} 2>/dev/null
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Liveness probe: checks whether MySQL is still running
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  mysqladmin ping -h 127.0.0.1 -u root -p${MYSQL_ROOT_PASSWORD} 2>/dev/null
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            # MySQL data directory
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            # MySQL configuration file
+            - name: mysql-config
+              mountPath: /etc/mysql/conf.d
+            # Initialization scripts
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: vocara-mysql-pvc
+        - name: mysql-config
+          configMap:
+            name: vocara-mysql-config
+            items:
+              - key: my.cnf
+                path: my.cnf
+        - name: initdb
+          configMap:
+            name: vocara-mysql-initdb

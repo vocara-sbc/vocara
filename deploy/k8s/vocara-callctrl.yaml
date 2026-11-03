@@ -1,0 +1,141 @@
+# ============================================================
+# Vocara Call Center System - vocara-callctrl Call Control
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-callctrl
+  namespace: vocara
+  labels:
+    app: vocara-callctrl
+    app.kubernetes.io/name: vocara-callctrl
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+  selector:
+    app: vocara-callctrl
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-callctrl
+  namespace: vocara
+  labels:
+    app: vocara-callctrl
+    app.kubernetes.io/name: vocara-callctrl
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-callctrl
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-callctrl
+      annotations:
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: vocara-callctrl
+          image: registry.example.com/vocara/vocara-callctrl:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8083
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # Configuration file path: points to config.yaml mounted from the ConfigMap below
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # Application secret key: X-Internal-Token between internal services (same value across all five services)
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: Replace this value; use a Secret when possible
+
+            # Agent-side media node address (hostNetwork has no cluster Service; configure the actual node IP)
+            - name: VOCARA_ESL_HOST
+              value: "192.168.100.11"  # FS-Agent agent-side node address (hostNetwork)
+
+            # Keep the password consistent with the other backend services (plaintext placeholder; use a Secret in production)
+            - name: VOCARA_MYSQL_PASSWORD
+              value: "vocara123"  # TODO: Match the MySQL root password
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""  # Redis does not use a password
+            - name: VOCARA_NATS_PASSWORD
+              value: ""  # NATS authentication is disabled
+            - name: VOCARA_ESL_PASSWORD
+              value: "ClueCon"  # Matches the password in FS event_socket.conf.xml
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8083
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-callctrl-config
+

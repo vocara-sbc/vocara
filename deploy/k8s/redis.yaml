@@ -1,0 +1,188 @@
+# ============================================================
+# Vocara Call Center System - Redis 7
+# Stateful service using a StatefulSet and PVC for persistence
+# AOF persistence is enabled
+# ============================================================
+
+---
+# Redis Service
+kind: Service
+apiVersion: v1
+metadata:
+  name: vocara-redis
+  namespace: vocara
+  labels:
+    app: vocara-redis
+    app.kubernetes.io/name: vocara-redis
+    app.kubernetes.io/part-of: vocara
+spec:
+  ports:
+    - name: redis
+      protocol: TCP
+      port: 6379
+      targetPort: 6379
+  selector:
+    app: vocara-redis
+  type: ClusterIP
+
+---
+# Redis configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vocara-redis-config
+  namespace: vocara
+  labels:
+    app: vocara-redis
+data:
+  redis.conf: |
+    # Basic settings
+    bind 0.0.0.0
+    port 6379
+    daemonize no
+    supervised no
+    pidfile /var/run/redis/redis.pid
+
+    # Memory settings
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+
+    # Persistence - AOF
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+    aof-use-rdb-preamble yes
+
+    # Persistence - RDB (optional; retained as a backup when AOF is primary)
+    save 900 1
+    save 300 10
+    save 60 10000
+    dbfilename dump.rdb
+    dir /data
+
+    # Logging
+    loglevel notice
+    logfile ""
+
+    # Slow queries
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+
+    # Clients
+    maxclients 10000
+    timeout 300
+    tcp-keepalive 60
+
+    # Password (recommended in production; override via an environment variable)
+    # requirepass yourpassword
+
+    # Other settings
+    databases 16
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+
+---
+# Redis PersistentVolumeClaim
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vocara-redis-pvc
+  namespace: vocara
+  labels:
+    app: vocara-redis
+    app.kubernetes.io/name: vocara-redis
+    app.kubernetes.io/part-of: vocara
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: ""  # Uses the default StorageClass
+
+---
+# Redis StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vocara-redis
+  namespace: vocara
+  labels:
+    app: vocara-redis
+    app.kubernetes.io/name: vocara-redis
+    app.kubernetes.io/part-of: vocara
+spec:
+  serviceName: vocara-redis
+  replicas: 1  # Single-instance Redis; use Redis Cluster or Sentinel mode in production
+  selector:
+    matchLabels:
+      app: vocara-redis
+  template:
+    metadata:
+      labels:
+        app: vocara-redis
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          # Readiness probe: checks whether Redis can respond
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Liveness probe
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 5
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: redis-config
+              mountPath: /etc/redis
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: vocara-redis-pvc
+        - name: redis-config
+          configMap:
+            name: vocara-redis-config
+            items:
+              - key: redis.conf
+                path: redis.conf

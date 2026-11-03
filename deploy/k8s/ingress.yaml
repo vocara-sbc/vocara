@@ -1,0 +1,58 @@
+# ============================================================
+# Vocara Call Center System - Ingress Entry Point
+# Uses the NGINX Ingress Controller and routes all paths to vocara-web.
+# Nginx in the vocara-web container handles static hosting and five reverse proxies:
+#   /api /callapi /agentapi /ws /sip-ws
+# ============================================================
+# Prerequisite: NGINX Ingress Controller is installed
+# Installation reference:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vocara-ingress
+  namespace: vocara
+  labels:
+    app: vocara
+    app.kubernetes.io/name: vocara-ingress
+    app.kubernetes.io/part-of: vocara
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+
+    # Client request body size limit (for file uploads, etc.)
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+    # Proxy timeouts (idle timeout for regular HTTP requests; 3600s supports long-lived /ws and /sip-ws connections)
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # WebSocket services
+    nginx.ingress.kubernetes.io/websocket-services: "vocara-web"
+
+    # Real IP forwarding
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/forwarded-for-header: "X-Forwarded-For"
+
+spec:
+  # TLS configuration (HTTPS is required in production)
+  # tls:
+  #   - hosts:
+  #       - vocara.example.com
+  #     secretName: vocara-tls-secret
+
+  rules:
+    # Replace with the actual domain name
+    - host: vocara.example.com
+      http:
+        paths:
+          # Routes all paths to vocara-web (static pages, API, WebSocket, and SIP WebSocket)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vocara-web
+                port:
+                  number: 80

@@ -1,0 +1,110 @@
+# Vocara ACD 服务配置
+
+app:
+  name: vocara-acd
+  version: 1.0.0
+  env: dev # dev | test | prod
+  secret_key: vocara-dev-shared-secret-2026
+  timezone: Asia/Shanghai
+
+server:
+  host: 0.0.0.0
+  port: 8082
+  mode: debug
+  read_timeout: 10  # 秒
+  write_timeout: 10 # 秒
+  idle_timeout: 60
+  max_request_body: 10485760
+  shutdown_timeout: 30 # 优雅关闭超时（秒）
+
+redis:
+  mode: single # single | cluster | sentinel
+  addrs: 127.0.0.1:6379
+  username: ""
+  password: ""
+  db: 0
+  master_name: ""
+  pool_size: 50
+  min_idle_conns: 10
+  max_retries: 3
+  dial_timeout: 5000
+  read_timeout: 3000
+  write_timeout: 3000
+  pool_timeout: 4000
+  idle_timeout: 300
+  idle_check_freq: 60
+
+mysql:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: "vocara123"
+  database: vocara
+  charset: utf8mb4
+  collation: utf8mb4_unicode_ci
+  parse_time: true
+  loc: Local
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 60
+  conn_max_idle_time: 10
+  auto_migrate: false
+  slow_threshold: 1000
+  log_level: warn
+
+nats:
+  urls: nats://127.0.0.1:4222
+  user: ""
+  password: ""
+  token: ""
+  reconnect_wait: 2
+  max_reconnect: -1
+  reconnect_buf: 8388608
+  timeout: 5
+  flush_timeout: 5
+  cluster_id: vocara
+  client_id: acd-service
+
+# ACD 专属配置（通过 viper 直接读取，不属于 config.Config）
+acd:
+  # 最大排队长度，0 表示不限制
+  max_queue_len: 100
+  # 最大优先级（VIP = 3）
+  max_priority: 3
+  # 优先级老化周期（秒），每经过一个周期优先级自动提升一级
+  # 设置为 0 关闭老化
+  priority_aging_cycle: 60
+  # 最大等待时间（秒），超时自动出队
+  # 设置为 0 不限制
+  max_wait_time: 600
+  # 调度定时兜底扫描间隔（秒）
+  schedule_interval: 5
+  # 分布式锁超时时间（秒）
+  lock_timeout: 10
+  # 分配最大重试次数
+  allocate_max_retries: 3
+  # 座席中心地址（HTTP 客户端调用）
+  agent_center_addr: "http://127.0.0.1:8081"
+  # 座席中心内部鉴权 Token
+  agent_center_token: "vocara-dev-shared-secret-2026"
+  # 是否使用模拟座席中心客户端（开发测试用）
+  use_mock_agent_client: false
+
+# 日志配置
+log:
+  level: info     # debug | info | warn | error
+  format: json    # json | console
+  output: "file"   # stdout | file | both——仅写文件，避免与 run.cmd stdout 重定向产生重复日志
+  file_path: ./logs/acd.log
+  max_size: 100   # MB
+  max_age: 30     # days
+  max_backups: 10
+  compress: true
+  caller: true
+  caller_skip: 1
+
+# License 授权：离线 vocara.lic，进程内置公钥本地验签
+license:
+  file: ./license/vocara.lic   # License 文件路径
+  check_interval: 3600         # 运行期复校间隔（秒）
+  fail_open: false             # 验签或指纹异常时放行业务，仅排障临时使用

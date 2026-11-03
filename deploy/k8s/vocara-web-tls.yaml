@@ -1,0 +1,31 @@
+# ============================================================
+# Vocara Call Center System - TLS Certificate Secret for the Web Frontend
+#
+# Self-signed certificate (for dev / internal network testing only; use a certificate issued by a trusted CA in production).
+# For 443 ssl, nginx reads tls.crt / tls.key from /etc/nginx/certs/, where this Secret is mounted
+# (see the tls volume in vocara-web.yaml).
+#
+# SAN entries: DNS:localhost, IP:127.0.0.1, IP:192.168.100.10, IP:192.168.100.11.
+# If agents access the service through other node IPs, regenerate the certificate and update
+# data.tls.crt / data.tls.key below (single-line base64):
+#   openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+#     -keyout tls.key -out tls.crt -days 365 -subj "/CN=vocara-web" \
+#     -addext "subjectAltName=DNS:localhost,IP:<accessIP1>,IP:<accessIP2>"
+#   openssl base64 -A -in tls.crt   # Remove line breaks and place the result in data.tls.crt
+#   openssl base64 -A -in tls.key   # Do the same for data.tls.key
+# ============================================================
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vocara-web-tls
+  namespace: vocara
+  labels:
+    app: vocara-web
+    app.kubernetes.io/name: vocara-web
+    app.kubernetes.io/part-of: vocara
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tDQpNSUlCcHpDQ0FVMmdBd0lCQWdJVWZ0bmhGMmQvZEdOc1dZNkxHOHJPVXpGWWFOc3dDZ1lJS29aSXpqMEVBd0l3DQpGVEVUTUJFR0ExVUVBd3dLZG05allYSmhMWGRsWWpBZUZ3MHlOakV3TWpFeE5ESTBNalZhRncweU56RXdNakV4DQpOREkwTWpWYU1CVXhFekFSQmdOVkJBTU1Dblp2WTJGeVlTMTNaV0l3V1RBVEJnY3Foa2pPUFFJQkJnZ3Foa2pPDQpQUU1CQndOQ0FBUkRFOVkwdHY0cnR6T1R2WTNzSk0vb1BzQWFXbGo0Rmg1bW9ROXlTb2tNVXF5QW5XU0FFRDdTDQpvRnQ3YU11T0FNTDF5TFVjWFFuMTRUVnE4bkpDMDV6c28zc3dlVEFkQmdOVkhRNEVGZ1FVZWNmRUNONTV3NldWDQoxM2tYSEp4anJCRU9XTlF3SHdZRFZSMGpCQmd3Rm9BVWVjZkVDTjU1dzZXVjEza1hISnhqckJFT1dOUXdEd1lEDQpWUjBUQVFIL0JBVXdBd0VCL3pBbUJnTlZIUkVFSHpBZGdnbHNiMk5oYkdodmMzU0hCSDhBQUFHSEJNQ29aQXFIDQpCTUNvWkFzd0NnWUlLb1pJemowRUF3SURTQUF3UlFJZ1UzZWlvSlhQcHRobEhTbEEvSkN3cE9ScXpYeHdKZ2tnDQpEYys2TkxKV2xKc0NJUURUejVIUVp6b042WmJSbjRvLzdZa3U2akRUWkFjZGt4Wmg2bVIyNkNpWG5RPT0NCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0NCg==
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tDQpNSUdIQWdFQU1CTUdCeXFHU000OUFnRUdDQ3FHU000OUF3RUhCRzB3YXdJQkFRUWdhMTNCTE5mSzVncERJVTdFDQpkek5qQUxtakZNTEs0RHlCRU5YV093cXc1dWFoUkFOQ0FBUkRFOVkwdHY0cnR6T1R2WTNzSk0vb1BzQWFXbGo0DQpGaDVtb1E5eVNva01VcXlBbldTQUVEN1NvRnQ3YU11T0FNTDF5TFVjWFFuMTRUVnE4bkpDMDV6cw0KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQ0K

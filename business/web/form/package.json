@@ -1,0 +1,25 @@
+{
+  "name": "vocara-form",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vocara 动态表单 SDK（设计器/渲染器/实例管理，自包含 Vue 应用，可独立孵化）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "type-check": "vue-tsc --noEmit",
+    "test:e2e": "node scripts/e2e-smoke.mjs"
+  },
+  "dependencies": {
+    "naive-ui": "^2.38.0",
+    "vue": "^3.5.13",
+    "vue-draggable-plus": "^0.6.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "happy-dom": "^20.14.5",
+    "typescript": "^5.7.2",
+    "vite": "^5.0.10",
+    "vue-tsc": "^2.2.0"
+  }
+}

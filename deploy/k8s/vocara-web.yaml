@@ -1,0 +1,128 @@
+# ============================================================
+# Vocara Call Center System - vocara-web Admin Frontend Entry
+# Unified Nginx entry: frontend static hosting + five reverse proxy groups (/api /callapi /agentapi /ws /sip-ws)
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-web
+  namespace: vocara
+  labels:
+    app: vocara-web
+    app.kubernetes.io/name: vocara-web
+    app.kubernetes.io/part-of: vocara
+spec:
+  # NodePort: provides direct access to the frontend entry through a node IP.
+  # Note: The default K8s node-port range is 30000-32767. To bind a port below 30000, allow it in the apiserver
+  # startup arguments (--service-node-port-range). Otherwise, remove the nodePort field
+  # and let the cluster allocate one automatically, or use ingress.yaml instead (ClusterIP + unified entry).
+  # HTTPS port: WebRTC getUserMedia requires a secure context. Access via a node IP must use HTTPS
+  # to prevent the browser from disabling the microphone when answering a call, so port 443 is also exposed (nginx terminates TLS).
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+      nodePort: 28571
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+      nodePort: 30443
+  selector:
+    app: vocara-web
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-web
+  namespace: vocara
+  labels:
+    app: vocara-web
+    app.kubernetes.io/name: vocara-web
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-web
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vocara-web
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      containers:
+        - name: vocara-web
+          image: registry.example.com/vocara/vocara-web:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+            - name: https
+              containerPort: 443
+              protocol: TCP
+          env:
+            # The FS agent side uses hostNetwork; reverse proxy directly via the node IP (no ClusterIP Service)
+            - name: VOCARA_SIP_ADDR
+              value: "192.168.100.11:5066"
+          # Upstream addresses default to Services with matching names (defaults are set in the image; configure here only to override them):
+          # VOCARA_ADMIN_ADDR=vocara-admin:8080
+          # VOCARA_AGENTCENTER_ADDR=vocara-agentcenter:8081
+          # VOCARA_ACD_ADDR=vocara-acd:8082
+          # VOCARA_CALLCTRL_ADDR=vocara-callctrl:8083
+          # VOCARA_PUSH_ADDR=vocara-push:8084
+          # VOCARA_SIP_ADDR=vocara-fs-agent:5066
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          volumeMounts:
+            # TLS certificate (self-signed or CA-issued), used by nginx for TLS termination on port 443
+            - name: tls
+              mountPath: /etc/nginx/certs
+              readOnly: true
+
+      volumes:
+        - name: tls
+          secret:
+            secretName: vocara-web-tls

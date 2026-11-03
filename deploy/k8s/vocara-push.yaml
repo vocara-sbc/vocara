@@ -1,0 +1,142 @@
+# ============================================================
+# Vocara Call Center System - vocara-push WebSocket Real-Time Push
+# Note: Run at least 3 replicas of the WebSocket service for high availability
+# ============================================================
+
+---
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: vocara-push
+  namespace: vocara
+  labels:
+    app: vocara-push
+    app.kubernetes.io/name: vocara-push
+    app.kubernetes.io/part-of: vocara
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8084
+      targetPort: 8084
+      protocol: TCP
+  selector:
+    app: vocara-push
+  # WebSocket session affinity (optional; uncomment to enable sticky sessions)
+  # sessionAffinity: ClientIP
+  # sessionAffinityConfig:
+  #   clientIP:
+  #     timeoutSeconds: 10800
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vocara-push
+  namespace: vocara
+  labels:
+    app: vocara-push
+    app.kubernetes.io/name: vocara-push
+    app.kubernetes.io/part-of: vocara
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vocara-push
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1  # Some unavailability is acceptable for WebSocket long-lived connections
+  template:
+    metadata:
+      labels:
+        app: vocara-push
+      annotations:
+        config-hash: "PLACEHOLDER"
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60  # The WebSocket service requires more time for graceful shutdown
+
+      containers:
+        - name: vocara-push
+          image: registry.example.com/vocara/vocara-push:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8084
+              protocol: TCP
+          env:
+            - name: TZ
+              value: "Asia/Shanghai"
+            # Configuration file path: points to config.yaml mounted from the ConfigMap below
+            - name: CONFIG_PATH
+              value: "/app/config.yaml"
+            - name: VOCARA_SERVER_MODE
+              value: "release"
+
+            # Application secret key: used for JWT signature verification during WebSocket handshakes and X-Internal-Token between internal services (same value across all five services)
+            - name: VOCARA_APP_SECRET_KEY
+              value: "change-me-to-a-strong-secret-key"  # TODO: Replace this value
+
+            # Redis password
+            - name: VOCARA_REDIS_PASSWORD
+              value: ""
+
+            # NATS password
+            - name: VOCARA_NATS_PASSWORD
+              value: ""
+
+          resources:
+            # The WebSocket service has higher memory and connection-count requirements
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8084
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8084
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 30"  # Allow more time for WebSocket connections to close naturally
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: vocara-push-config
+

@@ -1,0 +1,103 @@
+# Vocara frontend entry Nginx configuration template
+#
+# The five reverse proxy groups correspond one-to-one with the Vite dev proxy (vite.config.ts):
+#   /api       -> admin        (no path rewrite)
+#   /callapi   -> callctrl     (rewrite to /api/v1/call)
+#   /agentapi  -> agentcenter  (rewrite to /api/v1/agent)
+#   /ws        -> push         (WebSocket)
+#   /sip-ws    -> FreeSWITCH   (WebSocket, strip prefix)
+#
+# ${VOCARA_*_ADDR} is rendered by envsubst from environment variables when the container starts (only variables with the VOCARA_ prefix are rendered,
+# and Nginx built-in variables such as $http_upgrade are left unchanged). In K8s, the values point to same-named Services.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen       80;
+    # HTTPS: WebRTC getUserMedia is available only in a secure context. When accessed over http via a node IP, the browser disables the microphone,
+    # preventing agents from accessing the microphone to answer calls or send SIP 200 OK. TLS is terminated by adding 443 ssl on the same port,
+    # and once the page uses https, the call store automatically switches the SIP WebSocket to wss (Nginx reverse-proxies to FS over plaintext on port 5066).
+    # The certificate is mounted from a K8s Secret at /etc/nginx/certs/ (see vocara-web.yaml and the self-signed certificate generation steps).
+    listen       443 ssl http2;
+    server_name  _;
+
+    ssl_certificate     /etc/nginx/certs/tls.crt;
+    ssl_certificate_key /etc/nginx/certs/tls.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    root   ${VOCARA_WEB_ROOT};
+    index  index.html;
+
+    client_max_body_size 10m;
+
+    # gzip
+    gzip              on;
+    gzip_min_length   1024;
+    gzip_comp_level   5;
+    gzip_types        text/plain text/css application/javascript application/json
+                      image/svg+xml application/x-font-ttf font/woff font/woff2;
+
+    proxy_http_version 1.1;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+    proxy_connect_timeout 30s;
+    proxy_send_timeout    60s;
+    proxy_read_timeout    60s;
+
+    # ---- admin: admin API (no path rewrite) ----
+    location /api {
+        proxy_pass http://${VOCARA_ADMIN_ADDR};
+    }
+
+    # ---- callctrl call control: /callapi/** -> /api/v1/call/** ----
+    location = /callapi {
+        proxy_pass http://${VOCARA_CALLCTRL_ADDR}/api/v1/call;
+    }
+    location /callapi/ {
+        proxy_pass http://${VOCARA_CALLCTRL_ADDR}/api/v1/call/;
+    }
+
+    # ---- agentcenter agent center: /agentapi/** -> /api/v1/agent/** ----
+    location = /agentapi {
+        proxy_pass http://${VOCARA_AGENTCENTER_ADDR}/api/v1/agent;
+    }
+    location /agentapi/ {
+        proxy_pass http://${VOCARA_AGENTCENTER_ADDR}/api/v1/agent/;
+    }
+
+    # ---- push WebSocket real-time push ----
+    location /ws {
+        proxy_pass http://${VOCARA_PUSH_ADDR};
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # Long-lived connection: relax the WS idle timeout based on the push service heartbeat interval
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ---- FreeSWITCH WebRTC: /sip-ws/** -> FS root path /** ----
+    location = /sip-ws {
+        proxy_pass http://${VOCARA_SIP_ADDR}/;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+    location /sip-ws/ {
+        proxy_pass http://${VOCARA_SIP_ADDR}/;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # ---- Static frontend assets and SPA history entry fallback ----
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

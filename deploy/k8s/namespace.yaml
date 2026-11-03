@@ -1,0 +1,10 @@
+# Vocara Call Center System - Namespace
+# All Vocara-related resources are deployed in this namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vocara
+  labels:
+    name: vocara
+    app.kubernetes.io/name: vocara
+    app.kubernetes.io/part-of: vocara

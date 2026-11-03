@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>VocaraForm 调试页</title>
+  <style>
+    body { margin: 0; background: #ecf3ef; font-family: sans-serif; }
+    .bar { padding: 12px 16px; background: #fff; display: flex; gap: 8px; }
+    #app { height: calc(100vh - 56px); }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button onclick="mount('designer')">设计器</button>
+    <button onclick="mount('renderer')">渲染器</button>
+    <button onclick="mount('records')">实例管理</button>
+  </div>
+  <div id="app"></div>
+  <script type="module">
+    import { mountDesigner, mountRenderer, mountRecords } from '/src/main.ts'
+    // 调试页直连开发后端（admin 8080）；token 手动写入 localStorage.vocara_form_debug_token
+    const opts = {
+      apiBase: 'http://localhost:8080/api/v1/admin/forms',
+      getToken: () => localStorage.getItem('vocara_form_debug_token') || '',
+    }
+    let current = null
+    window.mount = (what) => {
+      if (current) current.unmount()
+      const el = document.getElementById('app')
+      el.innerHTML = ''
+      current = { designer: mountDesigner, renderer: mountRenderer, records: mountRecords }[what](el, opts)
+    }
+    window.mount('designer')
+  </script>
+</body>
+</html>
